@@ -1,0 +1,11 @@
+- Figure out how to work with a concurrent dhclient for IPv4
+  addressses. dhclient-exit-hooks that merges with real
+  /etc/resolv.conf?
+
+- Handle lifetime of RDNSS.
+
+- Patch RDNS option into FreeBSD's rtadvd.
+
+- Privilege seperation in radns?
+
+- Tests? How?

@@ -1,0 +1,47 @@
+-*- text -*-
+
+Router Advertisement DNS (radns)
+
+This is a small program used for getting hold of one or more addresses
+of resolving DNS servers. It listens for IPv6 Router Advertisements
+with the Recursive DNS Server (RDNSS) option and stores it in a file
+in the same syntax as resolv.conf(5). Currently, the default file name
+is ./resolv.conf. Settable with -f <filename>.
+
+Start like this as root:
+
+  # ./radns
+
+Logs will be sent through syslog to the LOG_DAEMON facility.
+
+If you want radns to run in foreground and log to the terminal, add -v
+for "verbosity". For even more verbosity, including hex dumps of the
+received messages, repeat it, such as -v -v -v.
+
+radns can be used with Secure Neighbor Discovery (SEND) with the use
+of additional software, such as DoCoMo Labs' userland SEND
+implementation:
+
+  http://www.docomolabs-usa.com/lab_opensource.html
+
+For radns to be useful, there must be a corresponding program on the
+router, sending out Router Advertisements with the RDNSS option. One
+such program is radvd:
+
+  http://www.litech.org/radvd/
+
+Some relevant texts:
+
+RFC 2460 Internet Protocol, Version 6 (IPv6) 
+RFC 3971 SEcure Neighbor Discovery (SEND)
+RFC 3972 Cryptographically Generated Addresses (CGA)
+RFC 4861 Neighbor Discovery for IP version 6 (IPv6).
+RFC 5006 IPv6 Router Advertisement Option for DNS Configuration
+
+= Contact =
+
+radns was originally written by M.C. Widerkrantz for Stickybit AB.
+http://www.stickybit.se/
+
+mc at the domain stickybit.se (work)
+mc at the domain hack.org (private)

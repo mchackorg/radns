@@ -1,0 +1,25 @@
+-*- text -*-
+
+0.4 - 2008-07-07
+
+  Support for multiple IPv6 addresses in RDNSS options added.
+
+  Two clause BSD license added.
+
+0.3 - 2008-06-13
+
+  No user visible changes. Only code makeup.
+
+0.2 - 2008-06-12
+
+  No longer dependent on libpcap. The flag -i <interface> now
+  obsolete.
+
+  Syslog support added. Logs to terminal if in verbose (-v) mode and
+  syslog otherwise.
+
+  Daemonizes on start.
+
+0.1 - 2008-06-09
+
+  First release.
