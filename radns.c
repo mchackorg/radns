@@ -333,6 +333,9 @@ void handle_icmp6(int sock)
                                       INET6_ADDRSTRLEN))
                 {
                     perror("Couldn't convert IPv6 address to string");
+
+                    /* Free the space for the addresses. */
+                    freeaddrmem(&straddrs);
                     return;
                 }
 
@@ -354,6 +357,9 @@ void handle_icmp6(int sock)
 
             /* Write address(es) to file. */
             writeresolv(straddrs);
+
+            /* Free the space for the addresses. */
+            freeaddrmem(&straddrs);
         }
         
         /* Move pass this option. */
@@ -394,7 +400,7 @@ static int getaddrmem(struct straddrs *addrs, int num)
     int i;
 
     /* Allocate the array of pointers. */
-    if (NULL == (addrs->addrbuf = malloc(num)))
+    if (NULL == (addrs->addrbuf = malloc(num * sizeof (char *))))
     {
         printf("Out of memory\n");
         exit(0);
