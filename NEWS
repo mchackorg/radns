@@ -1,5 +1,11 @@
 -*- text -*-
 
+0.7 -
+
+  Always truncate file before writing.
+
+  Use snprintf()
+
 0.6 - 2008-08-10
 
   Bug fix release. Fixed memory errors and leaks.

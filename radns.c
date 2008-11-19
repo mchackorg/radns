@@ -65,12 +65,18 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <string.h>
+#ifdef DMALLOC
+#include <dmalloc.h>
+#endif
 
 #define RESOLVEFILE "./resolv.conf"
 
 /* The Resolving DNS Server option, RFC 5006. */
 #define ND_OPT_RDNSS  25
 
+/* Space for "nameserver %s \n" where %s is the IPv6 address */
+#define NSADDRSIZE (12 + INET6_ADDRSTRLEN)
+    
 /*
  * XXX PACKETSIZE really taken out of the blue. Expected size of
  * incoming packets is:
@@ -82,6 +88,12 @@
  * That is, minimum 56 bytes, with unknown max for patological cases.
  */
 #define PACKETSIZE 1024
+
+/*
+ * Minimum length in bytes of the RDNSS option if we're going to care
+ * about it. Exactly 3 * 8 = 24 octets if there is one IPv6 address.
+ */
+#define RDNSSMINLEN 24
 
 char *progname; /* argv[0] */
 char *filename = RESOLVEFILE;
@@ -285,10 +297,10 @@ void handle_icmp6(int sock)
 
             /*
              * Length should be 3 (* 8 octets) if there is one IPv6
-             * address. Number of addresses = (Length - 1) / 2.  If less
-             * than 3, disregard this option.
+             * address. If less than 3 * 8 octets, disregard this
+             * option.
              */
-            if (optlen < 3 * 8)
+            if (optlen < RDNSSMINLEN)
             {
                 /* No IPv6 address here. Throw away. */
                 logmsg(LOG_INFO, "No IPv6 address in RDNSS option.\n");
@@ -306,6 +318,7 @@ void handle_icmp6(int sock)
                 return;
             }
 
+            /* How many addresses to DNS servers are there? */
             nr_of_addrs = (rdnss->nd_opt_len - 1) / 2;
 
             if (verbose > 0)
@@ -315,8 +328,8 @@ void handle_icmp6(int sock)
             }
 
             /*
-             * Get an array big enough to keep all our IPv6 addresses
-             * in printable form.
+             * Get an array big enough to keep all these IPv6
+             * addresses in printable form.
              */
             if (0 != getaddrmem(&straddrs, nr_of_addrs))
             {
@@ -467,12 +480,10 @@ static void logmsg(int pri, const char *message, ...)
 static void writeresolv(struct straddrs straddrs)
 {
     int filefd;
-    char buf[12 + INET6_ADDRSTRLEN]; /* Space for "nameserver %s \n"
-                                      * where %s is the IPv6
-                                      * address */
+    char buf[NSADDRSIZE];
     int i;
 
-    if (-1 == (filefd = open(filename, O_CREAT | O_RDWR, 0644)))
+    if (-1 == (filefd = open(filename, O_CREAT | O_WRONLY | O_TRUNC, 0644)))
     {
         perror("open");
         goto bad;
@@ -480,12 +491,13 @@ static void writeresolv(struct straddrs straddrs)
 
     for (i = 0; i < straddrs.num; i ++)
     {
-        if (-1 == sprintf(buf, "nameserver %s\n", straddrs.addrbuf[i]))
+        if (-1 == snprintf(buf, NSADDRSIZE, "nameserver %s\n",
+                           straddrs.addrbuf[i]))
         {
             perror("asprintf");
             goto bad;
         }
-    
+        
         if (-1 == write(filefd, buf, strlen(buf)))
         {
             perror("write");

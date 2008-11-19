@@ -1,7 +1,8 @@
-VERSION=0.6
+VERSION=0.7
 DIST=radns-$(VERSION)
 DISTFILES=LICENSE Makefile NEWS README TODO.txt radns.c
 CFLAGS=-Wall -W -g -DVERSION=\"$(VERSION)\"
+#CFLAGS=-Wall -W -g -DVERSION=\"$(VERSION)\" -DDMALLOC -DMALLOC_FUNC_CHECK -I/usr/local/include -L /usr/local/lib -ldmalloc
 TARGETS=radns
 RM=/bin/rm
 
