@@ -1,6 +1,12 @@
 -*- text -*-
 
-0.7 -
+0.8 - 2008-09-29
+
+  Only change is to add "STICKYBIT AB" to a few places in LICENSE and
+  radns.c. Stickybit was mentioned as the copyright holder at the top
+  of the text anyway, so hopefully no harm done.
+
+0.7 - 2008-09-29
 
   Always truncate file before writing.
 
