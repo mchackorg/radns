@@ -12,17 +12,19 @@
  *
  *   radns -f /etc/ra-resolv.conf
  *
- * Originally written by M.C. Widerkrantz for Stickybit AB.
+ * Originally written by Michael Cardell Widerkrantz for Stickybit AB.
  * http://www.stickybit.se/
  *
  * Contact:
  * 
- *   mc at the domain stickybit.se (work)
- *   mc at the domain hack.org (private)
+ *   mc at the domain hack.org
  *
  * Copyright (c) 2008, Stickybit AB.
  * All rights reserved.
  *
+ * Copyright (c) 2009, 2010 Michael Cardell Widerkrantz.
+ * All rights reserved.
+ * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
