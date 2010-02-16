@@ -57,6 +57,7 @@
 #include <syslog.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <pwd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <net/ethernet.h>
@@ -73,6 +74,8 @@
 #endif
 
 #define RESOLVEFILE "./resolv.conf"
+
+#define USER "radns"
 
 /* The Resolving DNS Server option, RFC 5006. */
 #define ND_OPT_RDNSS  25
@@ -506,10 +509,10 @@ static void writeresolv(struct straddrs straddrs)
     int filefd;
     char buf[NSADDRSIZE];
     int i;
-
+        
     if (-1 == (filefd = open(filename, O_CREAT | O_WRONLY | O_TRUNC, 0644)))
     {
-        perror("open");
+        logmsg(LOG_ERR, "couldn't open resolv.conf file %s\n", filename);
         goto bad;
     }
 
@@ -569,10 +572,12 @@ static void hexdump(u_int8_t *buf, u_int16_t len)
 
 static void printhelp(void)
 {
-    fprintf(stderr, "Usage: %s [-v [-v] [-v]] [-f filename]\n", progname);
+    fprintf(stderr, "Usage: %s [-v [-v] [-v]] [-f filename] [-u user]\n", progname);
 
     fprintf(stderr, "-f filename gives the filename the DNS resolving address "
             "is written to. Default is ./resolv.conf.\n");
+    fprintf(stderr, "-u user sets username to drop priveleges to. "
+            "Default is 'radns'.\n");
     fprintf(stderr, "Repeating -v means more verbosity.\n");
     fprintf(stderr, "Use -V to get version information.\n");
 }
@@ -584,12 +589,14 @@ int main(int argc, char **argv)
     struct icmp6_filter filter; /* Filter for raw socket. */
     fd_set in;
     int found;
+    char *user = USER;
+    struct passwd *pw;
     
     progname = argv[0];
 
     while (1)
     {
-        ch = getopt(argc, argv, "f:i:vV");
+        ch = getopt(argc, argv, "f:i:u:vV");
         if (-1 == ch)
         {
             /* No more options, break out of while loop. */
@@ -600,7 +607,10 @@ int main(int argc, char **argv)
         {
         case 'f':
             filename = optarg;
-            break;            
+            break;
+        case 'u':
+            user = optarg;
+            break;
         case 'v':
             verbose ++;
             break;
@@ -616,6 +626,19 @@ int main(int argc, char **argv)
     if (-1 == (sock = socket(AF_INET6, SOCK_RAW, IPPROTO_ICMPV6)))
     {
         logmsg(LOG_ERR, "Error from socket(). Terminating.\n");
+        exit(1);
+    }
+
+    /* Drop privileges. */
+    if (NULL == (pw = getpwnam(user)))
+    {
+        logmsg(LOG_ERR, "couldn't find user '%s'.\n", user);
+        exit(1);
+    }
+    
+    if (0 != setgid(pw->pw_gid) || 0 != setuid(pw->pw_uid))
+    {
+        logmsg(LOG_ERR, "couldn't drop privileges\n");
         exit(1);
     }
 
