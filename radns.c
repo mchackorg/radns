@@ -60,6 +60,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <net/ethernet.h>
+#include <net/if.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/ip6.h>
@@ -143,8 +144,11 @@ void handle_icmp6(int sock)
                                  * counting from datap. */
     struct in6_addr *addr;      /* An IPv6 address. */
     struct straddrs straddrs;   /* A list of printable IPv6 addresses. */
+    struct sockaddr_in6 src;    /* Source address of RA packet. */
+    socklen_t size = sizeof (struct sockaddr_in6);
 
-    if (-1 == (buflen = read(sock, &buf, PACKETSIZE)))
+    if (-1 == (buflen = recvfrom(sock, &buf, PACKETSIZE, 0,
+                                 (struct sockaddr *)&src, &size)))
     {
         logmsg(LOG_ERR, "read error on raw socket\n");
         return;
@@ -194,10 +198,27 @@ void handle_icmp6(int sock)
   +-+-+-+-+-+-+-+-+-+-+-+-
 */
 
-    if (verbose > 0)
+    if (verbose > 1)
     {
-        printf("Received an IPv6 Router Advertisement.\n");
-#if DEBUG
+        char ifname[IFNAMSIZ];
+        char srcaddrstr[INET6_ADDRSTRLEN];            
+
+        if (NULL == inet_ntop(AF_INET6, &src.sin6_addr, srcaddrstr, INET6_ADDRSTRLEN))
+            {
+                perror("Couldn't convert IPv6 address to string");
+        }
+        
+        printf("Received an IPv6 Router Advertisement from %s\n", srcaddrstr);
+
+        if (NULL != if_indextoname(src.sin6_scope_id, ifname))
+        {
+            printf("On interface: %s\n", ifname);
+        }
+        else
+        {
+            printf("On unknown interface, index %d\n", src.sin6_scope_id);
+        }
+
         printf("ICMP6 header\n");
         printf("  nd_ra_type: %d\n", ra->nd_ra_type);
         printf("  nd_ra_code: %d\n", ra->nd_ra_code);
@@ -207,7 +228,6 @@ void handle_icmp6(int sock)
         printf("...\n");
         printf("  nd_ra_reachable: %ld\n", (long)ra->nd_ra_reachable);
         printf("  nd_ra_retransmit: %ld\n", (long)ra->nd_ra_retransmit);
-#endif
     }
     
     /* Move pass the RA header to any options we might find. */
