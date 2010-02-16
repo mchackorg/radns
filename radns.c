@@ -396,10 +396,12 @@ void handle_icmp6(int sock)
             /* Free the space for the addresses. */
             freeaddrmem(&straddrs);
         }
-        
-        /* Move pass this option. */
-        datap += optlen;
-        lenleft -= optlen;
+        else
+        {
+            /* Not an RDNSS option. Skip it. */
+            datap += optlen;
+            lenleft -= optlen;
+        }
     } /* while */        
     
     return;
