@@ -69,6 +69,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <string.h>
+#include <errno.h>
 #ifdef DMALLOC
 #include <dmalloc.h>
 #endif
@@ -76,6 +77,8 @@
 #define RESOLVEFILE "./resolv.conf"
 
 #define USER "radns"
+
+#define EXITHOOK "./radns-script"
 
 /* The Resolving DNS Server option, RFC 5006. */
 #define ND_OPT_RDNSS  25
@@ -105,6 +108,7 @@ char *progname; /* argv[0] */
 char *filename = RESOLVEFILE;
 int progdone = 0;
 int verbose = 0;
+int localerrno;
 
 /*
  * Array of printable IPv6 addresses.
@@ -117,6 +121,7 @@ struct straddrs
     
 static void hexdump(u_int8_t *buf, u_int16_t len);
 static void printhelp(void);
+static int exithook(char *filename, char *ifname);
 static void writeresolv(struct straddrs straddrs);
 static void logmsg(int pri, const char *message, ...);
 static void freeaddrmem(struct straddrs *addrs);
@@ -149,7 +154,8 @@ void handle_icmp6(int sock)
     struct straddrs straddrs;   /* A list of printable IPv6 addresses. */
     struct sockaddr_in6 src;    /* Source address of RA packet. */
     socklen_t size = sizeof (struct sockaddr_in6);
-
+    char ifname[IFNAMSIZ];      /* Name of local network interface. */
+    
     if (-1 == (buflen = recvfrom(sock, &buf, PACKETSIZE, 0,
                                  (struct sockaddr *)&src, &size)))
     {
@@ -203,7 +209,6 @@ void handle_icmp6(int sock)
 
     if (verbose > 1)
     {
-        char ifname[IFNAMSIZ];
         char srcaddrstr[INET6_ADDRSTRLEN];            
 
         if (NULL == inet_ntop(AF_INET6, &src.sin6_addr, srcaddrstr, INET6_ADDRSTRLEN))
@@ -398,6 +403,9 @@ void handle_icmp6(int sock)
 
             /* Free the space for the addresses. */
             freeaddrmem(&straddrs);
+
+            /* Call external script. */
+            (void)exithook(filename, ifname);
         }
         else
         {
@@ -499,6 +507,61 @@ static void logmsg(int pri, const char *message, ...)
     }
 
     va_end(ap);
+}
+
+/*
+ * Call an external script to handle, for instance, interfacing with
+ * the resolvconf program.
+ *
+ * filename is our own 'resolv.conf' and ifname is the name of the
+ * local interface where we received the RA.
+ *
+ * Returns 0 on success.
+ */ 
+static int exithook(char *filename, char *ifname)
+{
+    pid_t pid;
+    
+    pid = fork();
+    if (-1 == pid)
+    {
+        logmsg(LOG_ERR, "couldn't fork.\n");
+        return -1;
+    }
+    else if (0 == pid)
+    {
+        char *argv[1];
+        char *envp[3];
+
+        /* We're in the child. */
+        
+        argv[0] = EXITHOOK;
+            
+        if (NULL == (envp[0] = calloc(sizeof (char), strlen(ifname))))
+        {
+            logmsg(LOG_ERR, "out of memory.\n");
+            exit(1);
+        }
+        snprintf(envp[0], 3 + strlen(ifname) + 1, "if=%s", ifname);
+        
+        if (NULL == (envp[1] = calloc(sizeof (char), 13 + strlen(filename))))
+        {
+            logmsg(LOG_ERR, "out of memory.\n");
+            exit(1);
+        }
+        snprintf(envp[1], 13 + strlen(filename) + 1, "resolv_conf=%s", filename);
+
+        envp[2] = NULL;
+        
+        if (-1 == execve(EXITHOOK, argv, envp))
+        {
+            localerrno = errno;
+            logmsg(LOG_ERR, "couldn't exec(): %s\nexiting...\n", strerror(localerrno));
+            exit(1);
+        }
+    } /* child */
+
+    return 0;
 }
 
 /*

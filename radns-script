@@ -1,0 +1,27 @@
+#! /bin/sh
+# -*- shell-script -*-
+
+echo ----------------- radns-script -----------------
+
+echo interface: $if
+echo resolv_conf: $resolv_conf
+
+
+if [ "$resolv_conf" = "" ]
+then
+    if [ $verbose -gt 0 ]
+    then
+        echo "$0: Environment variable $resolv_conf not set. Exiting..."
+    fi
+    exit 1
+fi
+
+# Do nothing if $resolv_conf is not an ordinary file
+if [ ! -f $resolv_conf ]
+then
+    if [ $verbose -gt 0 ]
+    then
+        echo "$0: $resolv_conf is not an ordinary file or does not exist. Exiting..."
+    fi
+    exit 1
+fi
