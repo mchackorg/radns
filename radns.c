@@ -701,7 +701,7 @@ void sigcatch(int sig)
 {
     if (SIGCHLD == sig)
     {
-        /* A child died. Tell main loop to deal with it. */
+        /* A child process died. Tell main loop to deal with it. */
         childcare = 1;
     }
 }
@@ -711,15 +711,16 @@ int main(int argc, char **argv)
     char ch;                    /* Option character */
     int sock;               /* Raw socket file descriptor */
     struct icmp6_filter filter; /* Filter for raw socket. */
-    int on;
-    fd_set in;
+    int on;                     /* Just a flag for setsockopts... */
+    fd_set in;                  
     int found;
-    char *user = USER;
-    struct passwd *pw;
-    struct sigaction sigact;
+    char *user = USER;          /* Username we will run as. */
+    struct passwd *pw;          /* Password entry of the user. */
+    struct sigaction sigact;    /* Signal handler. */
     
     progname = argv[0];
 
+    /* Install signal handler to deal with death of child processes. */
     sigact.sa_flags = 0;
     sigact.sa_handler = sigcatch;
     sigaction(SIGCHLD, &sigact, NULL);
