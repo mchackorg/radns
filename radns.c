@@ -60,6 +60,7 @@
 #include <pwd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <net/ethernet.h>
 #include <net/if.h>
 #include <arpa/inet.h>
@@ -794,10 +795,12 @@ int main(int argc, char **argv)
     /* Main loop. */
     for (progdone = 0; !progdone; )
     {
+        int status;
+        
         FD_ZERO(&in);
         
         FD_SET(sock, &in);
-        
+
         found = select(sock + 1, &in, NULL, NULL, NULL);
         if (-1 == found)
         {
@@ -810,6 +813,10 @@ int main(int argc, char **argv)
                 handle_icmp6(sock);
             } /* sock */
         } /* if found */
+
+        /* Reap any zombie exit hook script we might have. */
+        (void)waitpid(-1, &status, WNOHANG);
+        
     } /* for */
 
     logmsg(LOG_INFO, "Terminating.\n");
