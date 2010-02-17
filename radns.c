@@ -705,7 +705,7 @@ int main(int argc, char **argv)
     struct passwd *pw;
     
     progname = argv[0];
-
+           
     while (1)
     {
         ch = getopt(argc, argv, "f:i:u:vV");
@@ -801,6 +801,14 @@ int main(int argc, char **argv)
         
         FD_SET(sock, &in);
 
+        /*
+         * Reap any zombie exit hook script(s) we might have.
+         *
+         * FIXME Move inside signal handler for SIGCHLD.
+         * */
+        while (-1 != waitpid(-1, &status, WNOHANG))
+            ;
+        
         found = select(sock + 1, &in, NULL, NULL, NULL);
         if (-1 == found)
         {
@@ -813,10 +821,6 @@ int main(int argc, char **argv)
                 handle_icmp6(sock);
             } /* sock */
         } /* if found */
-
-        /* Reap any zombie exit hook script we might have. */
-        (void)waitpid(-1, &status, WNOHANG);
-        
     } /* for */
 
     logmsg(LOG_INFO, "Terminating.\n");
