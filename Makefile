@@ -1,4 +1,4 @@
-VERSION=0.8
+VERSION=0.9
 DIST=radns-$(VERSION)
 DISTFILES=LICENSE Makefile NEWS README TODO.txt radns.c
 CFLAGS=-Wall -W -g -DVERSION=\"$(VERSION)\"
@@ -14,7 +14,7 @@ radns: radns.c
 $(DIST).tar.gz:
 	mkdir $(DIST)
 	cp $(DISTFILES) $(DIST)/
-	tar cf $(DIST).tar $(DIST)
+	tar cf $(DIST).tar --exclude .git $(DIST)
 	gzip -9 $(DIST).tar
 	$(RM) -rf $(DIST)
 
