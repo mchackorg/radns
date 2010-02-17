@@ -134,6 +134,7 @@ void handle_icmp6(int sock)
 {
     u_int8_t buf[PACKETSIZE];   /* The entire ICMP6 message. */
     int buflen;                 /* The lenght of the ICMP6 buffer. */
+    u_int8_t ancbuf[CMSG_SPACE(sizeof (struct in6_pktinfo)) ]; /* Ancillary data. */
     const struct nd_router_advert *ra; /* A Router Advertisement */
     const struct nd_opt_rdnss
     {
@@ -153,16 +154,80 @@ void handle_icmp6(int sock)
     struct in6_addr *addr;      /* An IPv6 address. */
     struct straddrs straddrs;   /* A list of printable IPv6 addresses. */
     struct sockaddr_in6 src;    /* Source address of RA packet. */
-    socklen_t size = sizeof (struct sockaddr_in6);
     char ifname[IFNAMSIZ];      /* Name of local network interface. */
+    struct iovec iov[1] =
+        {
+            { .iov_base = buf, .iov_len = sizeof (buf) }
+        };                      /* Incoming buffer. */
+    struct msghdr msg =
+        {
+            .msg_name = &src,
+            .msg_namelen = sizeof (src),
+            .msg_iov = iov,
+            .msg_iovlen = sizeof (iov) / sizeof (iov[0]),
+            .msg_control = ancbuf,
+            .msg_controllen = sizeof (ancbuf)
+        };                      /* Incoming message. */
+    struct in6_pktinfo *pktinfo; /* Metadata about the packet. */
+    struct cmsghdr *cmsgp;       /* Pointer to ancillary data. */
     
-    if (-1 == (buflen = recvfrom(sock, &buf, PACKETSIZE, 0,
-                                 (struct sockaddr *)&src, &size)))
+    if (-1 == (buflen = recvmsg(sock, &msg, 0)))
     {
         logmsg(LOG_ERR, "read error on raw socket\n");
         return;
     }
 
+    if (msg.msg_flags & (MSG_TRUNC | MSG_CTRUNC))
+    {
+        logmsg(LOG_ERR, "truncated message\n");
+        return;
+    }
+    
+    /* Find our packet information (asked for by the IP6_RECVPKTINFO). */
+    for (cmsgp = CMSG_FIRSTHDR(&msg); cmsgp != NULL;
+         cmsgp = CMSG_NXTHDR(&msg, cmsgp))
+    {
+        if (cmsgp->cmsg_len == 0)
+        {
+            logmsg(LOG_ERR, "ancillary data with zero length.\n");
+            return;
+        }
+
+        if ((cmsgp->cmsg_level == IPPROTO_IPV6) && (cmsgp->cmsg_type
+                                                    == IPV6_PKTINFO))
+        {
+            pktinfo = (struct in6_pktinfo *)CMSG_DATA(cmsgp);
+        }
+    }
+
+    /* Convert it to an interface name. */
+    if (NULL == if_indextoname(pktinfo->ipi6_ifindex, ifname))
+    {
+        logmsg(LOG_ERR, "couldn't find interface name: index %d\n", pktinfo->ipi6_ifindex);
+        strncpy(ifname, "<none>", IFNAMSIZ);
+    }
+
+    if (verbose > 1)
+    {
+        char srcaddrstr[INET6_ADDRSTRLEN];          
+
+        if (NULL == inet_ntop(AF_INET6, &src.sin6_addr, srcaddrstr, INET6_ADDRSTRLEN))
+        {
+            logmsg(LOG_ERR, "Couldn't convert IPv6 address to string\n");
+            return;
+        }
+        
+        printf("Received an IPv6 Router Advertisement from %s on interface %s\n", srcaddrstr, ifname);
+
+        if (NULL == inet_ntop(AF_INET6, &pktinfo->ipi6_addr, srcaddrstr, INET6_ADDRSTRLEN))
+        {
+            logmsg(LOG_ERR, "Couldn't convert IPv6 address to string\n");
+            return;
+        }
+
+        printf("Sent to: %s\n", srcaddrstr);
+    }
+    
     if (verbose > 2)
     {
         hexdump(buf, buflen);
@@ -181,7 +246,7 @@ void handle_icmp6(int sock)
     /* Check that it really is an RA, code 134 */
     if (ra->nd_ra_type != ND_ROUTER_ADVERT && ra->nd_ra_code != 0)
     {
-        logmsg(LOG_INFO, "Not a Router Advertisement. Type: %d, code: %d."
+        logmsg(LOG_INFO, "Not a Router Advertisement. Type: %d, code: %d. "
                 "Why did we get it?\n",
                 ra->nd_ra_type, ra->nd_ra_code);
         return;
@@ -209,24 +274,6 @@ void handle_icmp6(int sock)
 
     if (verbose > 1)
     {
-        char srcaddrstr[INET6_ADDRSTRLEN];            
-
-        if (NULL == inet_ntop(AF_INET6, &src.sin6_addr, srcaddrstr, INET6_ADDRSTRLEN))
-            {
-                perror("Couldn't convert IPv6 address to string");
-        }
-        
-        printf("Received an IPv6 Router Advertisement from %s\n", srcaddrstr);
-
-        if (NULL != if_indextoname(src.sin6_scope_id, ifname))
-        {
-            printf("On interface: %s\n", ifname);
-        }
-        else
-        {
-            printf("On unknown interface, index %d\n", src.sin6_scope_id);
-        }
-
         printf("ICMP6 header\n");
         printf("  nd_ra_type: %d\n", ra->nd_ra_type);
         printf("  nd_ra_code: %d\n", ra->nd_ra_code);
@@ -531,29 +578,29 @@ static int exithook(char *filename, char *ifname)
     else if (0 == pid)
     {
         char *argv[1];
-        char *envp[3];
+        char *env[3];
 
         /* We're in the child. */
         
         argv[0] = EXITHOOK;
             
-        if (NULL == (envp[0] = calloc(sizeof (char), strlen(ifname))))
+        if (NULL == (env[0] = calloc(sizeof (char), strlen(ifname))))
         {
             logmsg(LOG_ERR, "out of memory.\n");
             exit(1);
         }
-        snprintf(envp[0], 3 + strlen(ifname) + 1, "if=%s", ifname);
+        snprintf(env[0], 3 + strlen(ifname) + 1, "if=%s", ifname);
         
-        if (NULL == (envp[1] = calloc(sizeof (char), 13 + strlen(filename))))
+        if (NULL == (env[1] = calloc(sizeof (char), 13 + strlen(filename))))
         {
             logmsg(LOG_ERR, "out of memory.\n");
             exit(1);
         }
-        snprintf(envp[1], 13 + strlen(filename) + 1, "resolv_conf=%s", filename);
+        snprintf(env[1], 13 + strlen(filename) + 1, "resolv_conf=%s", filename);
 
-        envp[2] = NULL;
+        env[2] = NULL;
         
-        if (-1 == execve(EXITHOOK, argv, envp))
+        if (-1 == execve(EXITHOOK, argv, env))
         {
             localerrno = errno;
             logmsg(LOG_ERR, "couldn't exec(): %s\nexiting...\n", strerror(localerrno));
@@ -650,6 +697,7 @@ int main(int argc, char **argv)
     char ch;                    /* Option character */
     int sock;               /* Raw socket file descriptor */
     struct icmp6_filter filter; /* Filter for raw socket. */
+    int on;
     fd_set in;
     int found;
     char *user = USER;
@@ -705,6 +753,7 @@ int main(int argc, char **argv)
         exit(1);
     }
 
+    /* Set a filter so we only get ICMPv6 packets. */
     ICMP6_FILTER_SETBLOCKALL(&filter);
     ICMP6_FILTER_SETPASS(ND_ROUTER_ADVERT, &filter);
 
@@ -714,7 +763,19 @@ int main(int argc, char **argv)
         logmsg(LOG_ERR, "Error from setsockopt(). Terminating.\n");
         exit(1);
     }
-    
+
+    /*
+     * Ask for ancillary data with each ICMPv6 packet so we can get
+     * the incoming interface name.
+     */
+    on = 1;
+    if (-1 == setsockopt(sock, IPPROTO_IPV6, IPV6_RECVPKTINFO, &on,
+                         sizeof(on)))
+    {
+        logmsg(LOG_ERR, "Error from setsockopt(). Terminating.\n");
+        exit(1);
+    }
+
     /*
      * Daemonize if we're not told to do otherwise. Don't change
      * directory to /, though.
