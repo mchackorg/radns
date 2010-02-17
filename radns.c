@@ -56,6 +56,7 @@
 #include <stdarg.h>
 #include <syslog.h>
 #include <unistd.h>
+#include <signal.h>
 #include <getopt.h>
 #include <pwd.h>
 #include <sys/socket.h>
@@ -107,9 +108,10 @@
 
 char *progname; /* argv[0] */
 char *filename = RESOLVEFILE;
-int progdone = 0;
-int verbose = 0;
-int localerrno;
+int progdone = 0;               /* true when we exit the program. */
+int verbose = 0;                /* how much debug output? */
+int localerrno;                 /* our own copy of errno. */
+int childcare = 0;              /* true when we need to reap zombies. */
 
 /*
  * Array of printable IPv6 addresses.
@@ -122,6 +124,7 @@ struct straddrs
     
 static void hexdump(u_int8_t *buf, u_int16_t len);
 static void printhelp(void);
+void sigcatch(int sig);
 static int exithook(char *filename, char *ifname);
 static void writeresolv(struct straddrs straddrs);
 static void logmsg(int pri, const char *message, ...);
@@ -693,6 +696,16 @@ static void printhelp(void)
     fprintf(stderr, "Use -V to get version information.\n");
 }
 
+/* Signal handler for SIGCHLD. */
+void sigcatch(int sig)
+{
+    if (SIGCHLD == sig)
+    {
+        /* A child died. Tell main loop to deal with it. */
+        childcare = 1;
+    }
+}
+
 int main(int argc, char **argv)
 {
     char ch;                    /* Option character */
@@ -703,9 +716,14 @@ int main(int argc, char **argv)
     int found;
     char *user = USER;
     struct passwd *pw;
+    struct sigaction sigact;
     
     progname = argv[0];
-           
+
+    sigact.sa_flags = 0;
+    sigact.sa_handler = sigcatch;
+    sigaction(SIGCHLD, &sigact, NULL);
+    
     while (1)
     {
         ch = getopt(argc, argv, "f:i:u:vV");
@@ -800,19 +818,16 @@ int main(int argc, char **argv)
         FD_ZERO(&in);
         
         FD_SET(sock, &in);
-
-        /*
-         * Reap any zombie exit hook script(s) we might have.
-         *
-         * FIXME Move inside signal handler for SIGCHLD.
-         * */
-        while (-1 != waitpid(-1, &status, WNOHANG))
-            ;
         
         found = select(sock + 1, &in, NULL, NULL, NULL);
         if (-1 == found)
         {
-            perror("select");
+            localerrno = errno;
+            if (EINTR != localerrno)
+            {
+                logmsg(LOG_ERR, "select failed: %s\n", strerror(localerrno));
+                exit(1);
+            }
         }
         else
         {
@@ -821,6 +836,15 @@ int main(int argc, char **argv)
                 handle_icmp6(sock);
             } /* sock */
         } /* if found */
+
+        if (childcare)
+        {
+            /* Reap any zombie exit hook script(s) we might have. */
+            while (-1 != waitpid(-1, &status, WNOHANG))
+                ;
+            childcare = 0;
+        }
+
     } /* for */
 
     logmsg(LOG_INFO, "Terminating.\n");
