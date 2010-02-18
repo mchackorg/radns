@@ -572,7 +572,22 @@ static void logmsg(int pri, const char *message, ...)
 static int exithook(char *filename, char *ifname)
 {
     pid_t pid;
+    struct stat sb;
+
+    /* Check if there's a script present. */
+    if (0 != stat(EXITHOOK, &sb))
+    {
+        /* We don't care if the file doesn't exist. Log any other problems. */
+        localerrno = errno;
+        if (ENOENT != localerrno)
+        {
+            logmsg(LOG_ERR, "stat() file %s gives: %s\n", EXITHOOK,
+                   strerror(localerrno));
+        }
+        return -1;        
+    }
     
+    /* The file exists. Go ahead and try to run it as a child. */
     pid = fork();
     if (-1 == pid)
     {
@@ -581,13 +596,14 @@ static int exithook(char *filename, char *ifname)
     }
     else if (0 == pid)
     {
-        char *argv[1];
+        char *argv[2];
         char *env[3];
 
         /* We're in the child. */
         
         argv[0] = EXITHOOK;
-            
+        argv[1] = NULL;
+
         if (NULL == (env[0] = calloc(sizeof (char), strlen(ifname))))
         {
             logmsg(LOG_ERR, "out of memory.\n");
