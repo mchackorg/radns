@@ -80,8 +80,6 @@
 
 #define USER "radns"
 
-#define EXITHOOK "./radns-script"
-
 /* The Resolving DNS Server option, RFC 5006. */
 #define ND_OPT_RDNSS  25
 
@@ -108,6 +106,7 @@
 
 char *progname; /* argv[0] */
 char *filename = RESOLVEFILE;
+char *scriptname = NULL;
 int progdone = 0;               /* true when we exit the program. */
 int verbose = 0;                /* how much debug output? */
 int localerrno;                 /* our own copy of errno. */
@@ -572,22 +571,13 @@ static void logmsg(int pri, const char *message, ...)
 static int exithook(char *filename, char *ifname)
 {
     pid_t pid;
-    struct stat sb;
 
-    /* Check if there's a script present. */
-    if (0 != stat(EXITHOOK, &sb))
+    if (NULL == scriptname)
     {
-        /* We don't care if the file doesn't exist. Log any other problems. */
-        localerrno = errno;
-        if (ENOENT != localerrno)
-        {
-            logmsg(LOG_ERR, "stat() file %s gives: %s\n", EXITHOOK,
-                   strerror(localerrno));
-        }
-        return -1;        
+        /* No script. */
+        return 0;
     }
     
-    /* The file exists. Go ahead and try to run it as a child. */
     pid = fork();
     if (-1 == pid)
     {
@@ -601,7 +591,7 @@ static int exithook(char *filename, char *ifname)
 
         /* We're in the child. */
         
-        argv[0] = EXITHOOK;
+        argv[0] = scriptname;
         argv[1] = NULL;
 
         if (NULL == (env[0] = calloc(sizeof (char), strlen(ifname))))
@@ -620,7 +610,7 @@ static int exithook(char *filename, char *ifname)
 
         env[2] = NULL;
         
-        if (-1 == execve(EXITHOOK, argv, env))
+        if (-1 == execve(scriptname, argv, env))
         {
             localerrno = errno;
             logmsg(LOG_ERR, "couldn't exec(): %s\nexiting...\n", strerror(localerrno));
@@ -733,6 +723,7 @@ int main(int argc, char **argv)
     char *user = USER;          /* Username we will run as. */
     struct passwd *pw;          /* Password entry of the user. */
     struct sigaction sigact;    /* Signal handler. */
+    struct stat sb;             /* For stat() */
     
     progname = argv[0];
 
@@ -743,7 +734,7 @@ int main(int argc, char **argv)
     
     while (1)
     {
-        ch = getopt(argc, argv, "f:i:u:vV");
+        ch = getopt(argc, argv, "f:i:s:u:vV");
         if (-1 == ch)
         {
             /* No more options, break out of while loop. */
@@ -754,6 +745,9 @@ int main(int argc, char **argv)
         {
         case 'f':
             filename = optarg;
+            break;
+        case 's':
+            scriptname = optarg;
             break;
         case 'u':
             user = optarg;
@@ -769,7 +763,7 @@ int main(int argc, char **argv)
             printhelp();
         }
     } /* while */
-
+    
     if (-1 == (sock = socket(AF_INET6, SOCK_RAW, IPPROTO_ICMPV6)))
     {
         logmsg(LOG_ERR, "Error from socket(). Terminating.\n");
@@ -786,6 +780,17 @@ int main(int argc, char **argv)
     if (0 != setgid(pw->pw_gid) || 0 != setuid(pw->pw_uid))
     {
         logmsg(LOG_ERR, "couldn't drop privileges\n");
+        exit(1);
+    }
+
+    /****************** Now running as radns user. ******************/
+
+    /* Check if there's a script. */
+    if (NULL != scriptname && 0 != stat(scriptname, &sb))
+    {
+        localerrno = errno;
+        logmsg(LOG_ERR, "Script file %s: %s. Terminating.\n", scriptname,
+               strerror(localerrno));
         exit(1);
     }
 
