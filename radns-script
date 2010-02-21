@@ -1,11 +1,19 @@
 #! /bin/sh
 # -*- shell-script -*-
 
+PATH=$PATH:/usr/local/sbin
+export PATH
+
 echo ----------------- radns-script -----------------
 
 echo interface: $if
 echo resolv_conf: $resolv_conf
 
+
+if [ "$if" = "" ]
+then
+    exit 1;
+fi
 
 if [ "$resolv_conf" = "" ]
 then
@@ -25,3 +33,9 @@ then
     fi
     exit 1
 fi
+
+# resolvconf's interface directory
+# (/usr/local/etc/resolvconf/run/interfaces/ on FreeBSD) needs to be
+# writable by our user, by default 'radns'.
+
+resolvconf -a $if < $resolv_conf
