@@ -1,5 +1,18 @@
 -*- text -*-
 
+0.9 -
+
+  * Calls script when new updates arrive.
+
+  * Drops privileges to designated user and group.
+
+  * Now knows which network interface the update arrived on. Necessary
+    for the resolvconf program.
+
+  * Added copyright information.
+
+  * Fixed bugs.
+
 0.8 - 2008-09-29
 
   Only change is to add "STICKYBIT AB" to a few places in LICENSE and
