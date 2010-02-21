@@ -8,9 +8,17 @@ with the Recursive DNS Server (RDNSS) option and stores it in a file
 in the same syntax as resolv.conf(5). Currently, the default file name
 is ./resolv.conf. Settable with -f <filename>.
 
-Start like this as root:
+The program then optionally calls another program to act on this
+information.
 
-  # ./radns
+Start, for instance, like this as root:
+
+  # ./radns -f /etc/resolv.conf
+
+The program drops priveleges to a user called radns (or specifiy
+another user with -u username). The file /etc/resolv.conf must be
+writable by the user. Please note that some other programs also might
+want to modify the same file. See below on Dual Stack and DHCP.
 
 Logs will be sent through syslog to the LOG_DAEMON facility.
 
@@ -18,19 +26,64 @@ If you want radns to run in foreground and log to the terminal, add -v
 for "verbosity". For even more verbosity, including hex dumps of the
 received messages, repeat it, such as -v -v -v.
 
-radns can be used with Secure Neighbor Discovery (SEND) with the use
-of additional software, such as DoCoMo Labs' userland SEND
-implementation:
-
-  http://www.docomolabs-usa.com/lab_opensource.html
-
 For radns to be useful, there must be a corresponding program on the
 router, sending out Router Advertisements with the RDNSS option. One
 such program is radvd:
 
   http://www.litech.org/radvd/
 
-Some relevant texts:
+= Dual Stack and DHCP =
+
+If you're on a dual stack machine that uses DHCP to get a IPv4
+address, chances are that the /etc/resolv.conf file will be written to
+by your DHCP client.
+
+If this is the case, there are numerous options.
+
+* Given that you're running the ISC dhclient:
+
+  1. Edit /etc/dhclient-enter-hooks and add:
+
+     make_resolv_conf() {
+       # "do nothing to resolv.conf"
+     }
+
+  2. Edit /etc/dhclient-exit-hooks and add:
+
+     if [ -f /etc/radns-resolv.conf ]
+     then
+       cp /etc/radns-resolv.conf /etc/resolv.conf
+     else
+       echo "" >/etc/resolv.conf
+     fi
+
+     echo "nameserver " $new_domain_name_servers >>/etc/resolv.conf
+
+  3. Start radns with:
+  
+     # touch /etc/radns-resolv.conf
+     # chown radns /etc/radns-resolv.conf
+     # radns -f /etc/radns-resolv.conf
+     
+  This will make sure that dhclient doesn't touch /etc/resolv.conf and
+  that the information dhclient receives about a resolving DNS server
+  is merged with radns' information into /etc/resolv.conf. Note,
+  though, that this will only happen when dhclient takes action.
+
+  Please note that currently radns will never remove
+  radns-resolv.conf! This might interfer with normal operation.
+
+* If you're DHCP client uses the resolvconf program:
+
+  1. Make sure resolvconf's interface directory
+     (/usr/local/etc/resolvconf/run/interfaces/ on FreeBSD) is
+     writable by the radns user, by default 'radns'.
+
+  2. Start radns like this:
+
+     # radns -f /tmp/radns-resolv.conf
+ 
+= Texts =
 
 RFC 2460 Internet Protocol, Version 6 (IPv6) 
 RFC 3971 SEcure Neighbor Discovery (SEND)
@@ -38,10 +91,10 @@ RFC 3972 Cryptographically Generated Addresses (CGA)
 RFC 4861 Neighbor Discovery for IP version 6 (IPv6).
 RFC 5006 IPv6 Router Advertisement Option for DNS Configuration
 
-= Contact =
+= Author =
 
-radns was originally written by M.C. Widerkrantz for Stickybit AB.
-http://www.stickybit.se/
+radns was originally written by Michael Cardell Widerkrantz (MC) in
+2008 for Stickybit AB and has since been maintained by MC. David
+Westlund provided some patches and suggestions.
 
-mc at the domain stickybit.se (work)
-mc at the domain hack.org (private)
+Contact: mc at the domain hack.org
