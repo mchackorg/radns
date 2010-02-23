@@ -2,74 +2,60 @@
 
 Router Advertisement DNS (radns)
 
-This is a small program used for getting hold of one or more addresses
-of resolving DNS servers. It listens for IPv6 Router Advertisements
-with the Recursive DNS Server (RDNSS) option and stores it in a file
-in the same syntax as resolv.conf(5). Currently, the default file name
-is ./resolv.conf. Settable with -f <filename>.
+This is a small program used for finding out one or more addresses to
+resolving DNS servers. It listens for IPv6 Router Advertisements with
+the Recursive DNS Server (RDNSS) option and stores the address(es) in
+a file in the same syntax as resolv.conf(5). Currently, the default
+file name is ./resolv.conf, but is configurable with -f <filename>.
 
-The program then optionally calls another program to act on this
-information.
-
-Start, for instance, like this as root:
+A typical way to start radns from the command line would be, for
+instance, this command as the root user:
 
   # ./radns -f /etc/resolv.conf
 
-The program drops priveleges to a user called radns (or specify
-another user with -u username). The file /etc/resolv.conf must be
-writable by the user. Please note that some other programs also might
-want to modify the same file. See below on Dual Stack and DHCP.
+The program drops priveleges to a user called radns (specify another
+user with -u username). The file /etc/resolv.conf must be writable by
+this user. Please note that some other programs also might want to
+modify the same file which might interfer with radns's operation. See
+below on Dual Stack and DHCP.
 
-Logs will be sent through syslog to the LOG_DAEMON facility.
+The program optionally calls another program, usually a shell script,
+to act on the information it receives. Specify the script with -s
+<filename>.
 
-If you want radns to run in foreground and log to the terminal, add -v
-for "verbosity". For even more verbosity, including hex dumps of the
-received messages, repeat it, such as -v -v -v.
+Logs will be sent through syslog to the LOG_DAEMON facility. If you
+want radns to run in the foreground and log to the terminal instead,
+add -v for "verbosity". For even more verbosity, including hex dumps
+of the received messages, repeat it, up to -v -v -v.
 
 For radns to be useful, there must be a corresponding program on the
-router sending out Router Advertisements with the RDNSS option. One
-such program is radvd:
+IPv6 router sending out Router Advertisements with the RDNSS
+option. One such program is radvd:
 
   http://www.litech.org/radvd/
 
 = Dual Stack and DHCP =
 
-If you're on a dual stack machine that uses DHCP to get a IPv4
-address, chances are that the /etc/resolv.conf file will be written to
-by your DHCP client.
+If you're on a dual stack machine that uses DHCP, chances are that the
+/etc/resolv.conf file will be written to by your DHCP client.
 
 If this is the case, there are numerous options.
 
 * Given that you're running the ISC dhclient:
 
-  1. Edit /etc/dhclient-enter-hooks and add:
+  1. Copy the dhclient-exit-hooks file in this directory to /etc/.
 
-     make_resolv_conf() {
-       # do nothing to resolv.conf
-     }
-
-  2. Edit /etc/dhclient-exit-hooks and add:
-
-     if [ -f /etc/radns-resolv.conf ]
-     then
-       cp /etc/radns-resolv.conf /etc/resolv.conf
-     else
-       echo "" >/etc/resolv.conf
-     fi
-
-     echo "nameserver " $new_domain_name_servers >>/etc/resolv.conf
-
-  3. Start radns with:
+  2. Start radns with:
   
      # touch /etc/radns-resolv.conf
      # chown radns /etc/radns-resolv.conf
      # radns -f /etc/radns-resolv.conf
      
-  This will make sure that dhclient doesn't touch /etc/resolv.conf and
-  that the information dhclient receives about a resolving DNS server
-  is merged with radns' information into /etc/resolv.conf. Note,
-  though, that this will only happen when dhclient takes action, not
-  when radns receives a Router Advertisment.
+  This will make sure that the information dhclient receives about a
+  resolving DNS server is merged with radns' information into
+  /etc/resolv.conf. Note, though, that this will only happen when
+  dhclient takes action, not when radns receives a Router
+  Advertisment.
 
   NOTA BENE: At the moment radns will never remove radns-resolv.conf!
   This might interfer with normal operation. This will be fixed in a
@@ -85,7 +71,9 @@ If this is the case, there are numerous options.
      /usr/local/bin.
 
   3. Start radns like this:
-     
+
+     # touch /etc/radns-resolv.conf
+     # chown radns /etc/radns-resolv.conf     
      # radns -f /tmp/radns-resolv.conf -s /usr/local/bin/radns-script
  
 = Texts =
