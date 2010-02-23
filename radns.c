@@ -699,7 +699,7 @@ static void printhelp(void)
             "is written to. Default is ./resolv.conf.\n");
     fprintf(stderr, "-u user sets username to drop priveleges to. "
             "Default is 'radns'.\n");
-    fprintf(stderr, "-s script executes 'script' after receiving a Router Advertisment.\n"
+    fprintf(stderr, "-s script executes 'script' after receiving a Router Advertisment.\n");
     fprintf(stderr, "Repeating -v means more verbosity.\n");
     fprintf(stderr, "Use -V to get version information.\n");
 }
