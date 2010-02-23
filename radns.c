@@ -692,12 +692,14 @@ static void hexdump(u_int8_t *buf, u_int16_t len)
 
 static void printhelp(void)
 {
-    fprintf(stderr, "Usage: %s [-v [-v] [-v]] [-f filename] [-u user]\n", progname);
+    fprintf(stderr, "Usage: %s [-v [-v] [-v]] [-f filename] [-u user] [-s script]\n",
+            progname);
 
     fprintf(stderr, "-f filename gives the filename the DNS resolving address "
             "is written to. Default is ./resolv.conf.\n");
     fprintf(stderr, "-u user sets username to drop priveleges to. "
             "Default is 'radns'.\n");
+    fprintf(stderr, "-s script executes 'script' after receiving a Router Advertisment.\n"
     fprintf(stderr, "Repeating -v means more verbosity.\n");
     fprintf(stderr, "Use -V to get version information.\n");
 }
