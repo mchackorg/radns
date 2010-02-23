@@ -75,6 +75,21 @@ If this is the case, there are numerous options.
      # touch /etc/radns-resolv.conf
      # chown radns /etc/radns-resolv.conf     
      # radns -f /tmp/radns-resolv.conf -s /usr/local/bin/radns-script
+
+= Development =
+
+The latest version can usually be found here:
+
+  http://hack.org/mc/hacks/radns/
+
+There is a git repository here:
+
+  http://hack.org/mc/git/radns/
+
+If you think the early history looks funny, it's because the releases
+(not every commit) were exported from Perforce and imported to CVS by
+hand. Not much development was done in CVS and then everything was
+migrated to git.
  
 = Texts =
 
@@ -88,6 +103,6 @@ RFC 5006 IPv6 Router Advertisement Option for DNS Configuration
 
 radns was originally written by Michael Cardell Widerkrantz (MC) in
 2008 for Stickybit AB and has since been maintained by MC. David
-Westlund provided some patches and suggestions.
+Westlund provided patches and suggestions.
 
 Contact: mc at the domain hack.org
