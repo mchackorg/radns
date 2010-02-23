@@ -1,5 +1,3 @@
-- Work with the resolvconf program.
-
 - Handle lifetime of RDNSS.
 
 - Patch RDNS option into FreeBSD's rtadvd.
