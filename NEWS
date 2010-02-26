@@ -1,17 +1,22 @@
 -*- text -*-
 
-0.9 -
+0.9 - 2010-02-26
 
-  * Calls script when new updates arrive.
+  * Calls script when new updates arrive. Example script provided in
+    radns-script.
 
-  * Drops privileges to designated user and group.
+  * Example script for cooperation with ISC's DHCP client dhclient
+    included.
 
-  * Now knows which network interface the update arrived on. Necessary
-    for the resolvconf program.
+  * Drops privileges early to designated user.
+
+  * Now knows which network interface the update arrived. This
+    information is passed to the external script. Necessary for the
+    resolvconf program.
 
   * Added copyright information.
 
-  * Fixed bugs.
+  * Fixed bug when several resolvers are present.
 
 0.8 - 2008-09-29
 
