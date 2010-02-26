@@ -76,6 +76,9 @@
 #include <dmalloc.h>
 #endif
 
+/* Might be in resolv.h */
+#define MAXNS 3
+
 #define RESOLVEFILE "./resolv.conf"
 
 #define USER "radns"
@@ -112,6 +115,13 @@ int verbose = 0;                /* how much debug output? */
 int localerrno;                 /* our own copy of errno. */
 int childcare = 0;              /* true when we need to reap zombies. */
 
+struct resolvdns
+{
+    struct in6_addr addr;       /* Address to DNS server. */
+    char ifname[IFNAMSIZ];      /* Interface name. */
+    time_t expire;              /* Expire time of this data. */
+};
+
 /*
  * Array of printable IPv6 addresses.
  */ 
@@ -120,20 +130,23 @@ struct straddrs
     char **addrbuf;
     int num; /* The number of addresses held in addrbuf. */
 };
-    
+
 static void hexdump(u_int8_t *buf, u_int16_t len);
 static void printhelp(void);
 void sigcatch(int sig);
 static int exithook(char *filename, char *ifname);
-static void writeresolv(struct straddrs straddrs);
+static void writeresolv(struct resolvdns resolv[]);
 static void logmsg(int pri, const char *message, ...);
-static void freeaddrmem(struct straddrs *addrs);
-static int getaddrmem(struct straddrs *addrs, int num);
+static time_t resolvttl(struct resolvdns resolv[]);
+static int expireresolv(struct resolvdns resolv[]);
+static void resetresolv(struct resolvdns resolv[]);
+static void addresolver(struct resolvdns resolver, struct resolvdns resolv[]);
+void handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ]);
 
 /*
  * Callback function when we get an ICMP6 message on socket sock.
  */ 
-void handle_icmp6(int sock)
+void handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
 {
     u_int8_t buf[PACKETSIZE];   /* The entire ICMP6 message. */
     int buflen;                 /* The lenght of the ICMP6 buffer. */
@@ -145,7 +158,7 @@ void handle_icmp6(int sock)
 	u_int8_t nd_opt_len; /* Length: 3 (* 8 octets) if one IPv6
                                 address. No of addresses = (Length -
                                 1) / 2.  If less than 3, disregard.*/
-        u_int16_t nd_opt_rdns_res; /* */
+        u_int16_t nd_opt_rdns_res; /* Reserved. */
         u_int32_t nd_opt_rdns_life; /* The maximum time in seconds to
                                        use this from the time it was
                                        sent. */
@@ -154,10 +167,9 @@ void handle_icmp6(int sock)
                                  * through data in buf. */
     int lenleft;                /* Length left in buf, in bytes,
                                  * counting from datap. */
-    struct in6_addr *addr;      /* An IPv6 address. */
-    struct straddrs straddrs;   /* A list of printable IPv6 addresses. */
+    struct in6_addr *addrp;      /* An IPv6 address. */
+
     struct sockaddr_in6 src;    /* Source address of RA packet. */
-    char ifname[IFNAMSIZ];      /* Name of local network interface. */
     struct iovec iov[1] =
         {
             { .iov_base = buf, .iov_len = sizeof (buf) }
@@ -173,6 +185,7 @@ void handle_icmp6(int sock)
         };                      /* Incoming message. */
     struct in6_pktinfo *pktinfo; /* Metadata about the packet. */
     struct cmsghdr *cmsgp;       /* Pointer to ancillary data. */
+    struct resolvdns resolver;
     
     if (-1 == (buflen = recvmsg(sock, &msg, 0)))
     {
@@ -214,15 +227,18 @@ void handle_icmp6(int sock)
     {
         char srcaddrstr[INET6_ADDRSTRLEN];          
 
-        if (NULL == inet_ntop(AF_INET6, &src.sin6_addr, srcaddrstr, INET6_ADDRSTRLEN))
+        if (NULL == inet_ntop(AF_INET6, &src.sin6_addr, srcaddrstr,
+                              INET6_ADDRSTRLEN))
         {
             logmsg(LOG_ERR, "Couldn't convert IPv6 address to string\n");
             return;
         }
         
-        printf("Received an IPv6 Router Advertisement from %s on interface %s\n", srcaddrstr, ifname);
+        printf("Received an IPv6 Router Advertisement from %s on interface "
+               "%s\n", srcaddrstr, ifname);
 
-        if (NULL == inet_ntop(AF_INET6, &pktinfo->ipi6_addr, srcaddrstr, INET6_ADDRSTRLEN))
+        if (NULL == inet_ntop(AF_INET6, &pktinfo->ipi6_addr, srcaddrstr,
+                              INET6_ADDRSTRLEN))
         {
             logmsg(LOG_ERR, "Couldn't convert IPv6 address to string\n");
             return;
@@ -373,6 +389,12 @@ void handle_icmp6(int sock)
              * addresses
              */
 
+            if (verbose > 2)
+            {
+                printf("  reserved: %d\n", rdnss->nd_opt_rdns_res);
+                printf("  lifetime: %d\n", ntohl(rdnss->nd_opt_rdns_life));
+            }
+            
             /* Extract DNS address(es) from option. */
 
             /*
@@ -406,56 +428,22 @@ void handle_icmp6(int sock)
                 printf("%d address(es) to resolving DNS servers found.\n",
                        nr_of_addrs);
             }
-
-            /*
-             * Get an array big enough to keep all these IPv6
-             * addresses in printable form.
-             */
-            if (0 != getaddrmem(&straddrs, nr_of_addrs))
-            {
-                logmsg(LOG_ERR, "Out of memory from getaddrmem\n");
-                return;
-            }
                 
-            /* Find the addresses and convert them to printable form. */
+            /* Find the addresses and store them. */
             for (i = 0; i < nr_of_addrs; i ++)
             {
-                addr = (struct in6_addr *)datap;
+                addrp = (struct in6_addr *)datap;
+
+                memcpy(&resolver.addr, addrp, sizeof (struct in6_addr));
+                strncpy(resolver.ifname, ifname, IFNAMSIZ);
+                resolver.expire = ntohl(rdnss->nd_opt_rdns_life);
+            
+                addresolver(resolver, resolvers);
                 
-                if (NULL == inet_ntop(AF_INET6, addr, straddrs.addrbuf[i],
-                                      INET6_ADDRSTRLEN))
-                {
-                    perror("Couldn't convert IPv6 address to string");
-
-                    /* Free the space for the addresses. */
-                    freeaddrmem(&straddrs);
-                    return;
-                }
-
-                if (verbose > 0)
-                {
-                    printf("Resolving DNS server address: %s\n",
-                           straddrs.addrbuf[i]);
-                }
-
                 /* Move to next address, if any. */
                 datap += sizeof (struct in6_addr);
                 lenleft -= sizeof (struct in6_addr);
             } /* for */
-
-            if (verbose > 0)
-            {
-                printf("Now writing addresses to file %s.\n", filename);
-            }
-
-            /* Write address(es) to file. */
-            writeresolv(straddrs);
-
-            /* Free the space for the addresses. */
-            freeaddrmem(&straddrs);
-
-            /* Call external script. */
-            (void)exithook(filename, ifname);
         }
         else
         {
@@ -466,70 +454,6 @@ void handle_icmp6(int sock)
     } /* while */        
     
     return;
-}
-
-/*
- * Free all IPv6 strings and the array of pointers in addrs.
- */
-static void freeaddrmem(struct straddrs *addrs)
-{
-    int i;
-
-    /* Free the strings. */
-    for (i = 0; i < addrs->num; i ++)
-    {
-        free(addrs->addrbuf[i]);
-    }
-
-    /* Free the array of pointers. */
-    free(addrs->addrbuf);
-
-    addrs->num = 0;
-}
-
-/*
- * Allocate num number of character strings with space enough to keep
- * IPv6 addressses.
- *
- * Returns 0 on success, -1 on failure.
- */ 
-static int getaddrmem(struct straddrs *addrs, int num)
-{
-    int i;
-
-    /* Allocate the array of pointers. */
-    if (NULL == (addrs->addrbuf = malloc(num * sizeof (char *))))
-    {
-        printf("Out of memory\n");
-        exit(0);
-    }
-
-    /* Allocate space for the strings. */
-    addrs->num = 0;
-    for (i = 0; i < num; i ++)
-    {
-        if (NULL == (addrs->addrbuf[i] = malloc(INET6_ADDRSTRLEN)))
-        {
-            printf("Out of memory\n");
-            goto bad;
-        }
-
-        /*
-         * Keep track on how many strings we have managed to allocate
-         * so far.
-         */
-        addrs->num ++;
-    }
-
-    return 0;
-
-bad:
-    /*
-     * Free all the buffers we allocated before we ran out of memory.
-     */
-    freeaddrmem(addrs);
-    
-    return -1;
 }
 
 /*
@@ -624,25 +548,37 @@ static int exithook(char *filename, char *ifname)
 /*
  * Write the addresses in of the recursive DNS server in a file.
  */ 
-static void writeresolv(struct straddrs straddrs)
+static void writeresolv(struct resolvdns resolv[])
 {
     int filefd;
     char buf[NSADDRSIZE];
     int i;
-        
+
     if (-1 == (filefd = open(filename, O_CREAT | O_WRONLY | O_TRUNC, 0644)))
     {
         logmsg(LOG_ERR, "couldn't open resolv.conf file %s\n", filename);
         goto bad;
     }
 
-    for (i = 0; i < straddrs.num; i ++)
+    for (i = 0; i < MAXNS; i ++)
     {
-        if (-1 == snprintf(buf, NSADDRSIZE, "nameserver %s\n",
-                           straddrs.addrbuf[i]))
+        char srcaddrstr[INET6_ADDRSTRLEN];          
+
+        if (0 != resolv[i].expire)
         {
-            perror("asprintf");
-            goto bad;
+            if (NULL == inet_ntop(AF_INET6, &resolv[i].addr,
+                                  srcaddrstr, INET6_ADDRSTRLEN))
+            {
+                logmsg(LOG_ERR, "Couldn't convert IPv6 address to "
+                       "string\n");
+            }
+        
+            if (-1 == snprintf(buf, NSADDRSIZE, "nameserver %s\n",
+                               srcaddrstr))
+            {
+                perror("asprintf");
+                goto bad;
+            }
         }
         
         if (-1 == write(filefd, buf, strlen(buf)))
@@ -714,6 +650,156 @@ void sigcatch(int sig)
     }
 }
 
+/*
+ * Return the time of the resolver address with the least time to
+ * live left.
+ */
+static time_t resolvttl(struct resolvdns resolv[])
+{
+    time_t least = 0;
+    int i;
+    
+    for (i = 0; i < MAXNS; i ++)
+    {
+        if (0 != resolv[i].expire)
+        {
+            if (0 == least || resolv[i].expire < least)
+            {
+                least = resolv[i].expire;
+            }
+        }
+    }
+    
+    return least;
+}
+
+/*
+ * Add new resolver.
+ */
+static void addresolver(struct resolvdns resolver, struct resolvdns resolv[])
+{
+    struct timeval now;
+    int i;
+    int added = 0;
+    int index = -1;
+    time_t old_time = 0;
+    
+    if (-1 == gettimeofday(&now, NULL))
+    {
+        logmsg(LOG_ERR, "Couldn't get current time. Can't set expire time.\n");
+        now.tv_sec = 0;
+    }
+
+    /* Find free slot. If not, lose the oldest and overwrite that. */
+    for (i = 0; i < MAXNS; i ++)
+    {
+        if (0 == resolv[i].expire)
+        {
+            /* Free slot. */
+            index = i;
+            added = 1;
+            break;
+        }
+    }
+
+    if (!added)
+    {
+        /* No free slots. Find oldest resolver and replace it. */
+        printf("No free slots...\n");
+        for (i = 0; i < MAXNS; i ++)
+        {
+            if (-1 == index || resolv[i].expire < old_time)
+            {
+                index = i;
+                old_time = resolv[i].expire;
+
+            }
+        }
+        printf("...oldest is index %d, time %d\n", index, old_time);        
+    }
+
+    /* Copy data. */
+    resolv[index] = resolver;
+    resolv[index].expire += now.tv_sec;
+    
+    if (verbose > 1)
+    {
+        char srcaddrstr[INET6_ADDRSTRLEN];          
+
+        if (NULL == inet_ntop(AF_INET6, &resolver.addr,
+                              srcaddrstr, INET6_ADDRSTRLEN))
+        {
+            logmsg(LOG_ERR, "Couldn't convert IPv6 address to "
+                   "string\n");
+        }
+        else
+        {
+            printf("Added resolver %s, if %s, ttl %d seconds.\n", srcaddrstr,
+                   resolver.ifname, resolver.expire);
+        }
+    } /* if verbose */
+
+}
+
+/*
+ * Check for expired DNS resolvers.
+ */ 
+static int expireresolv(struct resolvdns resolv[])
+{
+    int i;
+    int expired = 0;
+    struct timeval now;
+
+    if (-1 == gettimeofday(&now, NULL))
+    {
+        logmsg(LOG_ERR, "Couldn't get current time. Can't expire.\n");
+        return 0;
+    }
+    
+    for (i = 0; i < MAXNS; i ++)
+    {
+        if (0 != resolv[i].expire)
+        {
+            if (resolv[i].expire <= now.tv_sec)
+            {
+                resolv[i].expire = 0;
+                expired = 1;
+
+                if (verbose > 1)
+                {
+                    char srcaddrstr[INET6_ADDRSTRLEN];          
+
+                    if (NULL == inet_ntop(AF_INET6, &resolv[i].addr,
+                                          srcaddrstr, INET6_ADDRSTRLEN))
+                    {
+                        logmsg(LOG_ERR, "Couldn't convert IPv6 address to "
+                               "string\n");
+                    }
+                    else
+                    {
+                        printf("Resolver %s expired.\n", srcaddrstr);
+                    }
+                }
+            } /* if expire */
+        } /* if not unset */
+    } /* for */
+
+    return expired;
+}
+
+/*
+ * Reset all resolvers.
+ */
+static void resetresolv(struct resolvdns resolv[])
+{
+    int i;
+
+    for (i = 0; i < MAXNS; i ++)
+    {
+        resolv[i].expire = 0;
+    }
+}
+
 int main(int argc, char **argv)
 {
     char ch;                    /* Option character */
@@ -726,13 +812,18 @@ int main(int argc, char **argv)
     struct passwd *pw;          /* Password entry of the user. */
     struct sigaction sigact;    /* Signal handler. */
     struct stat sb;             /* For stat() */
-    
+    struct resolvdns resolvers[MAXNS]; /* Our resolvers. */
+    char ifname[IFNAMSIZ];              /* Name of local interface. */
+        
     progname = argv[0];
 
     /* Install signal handler to deal with death of child processes. */
     sigact.sa_flags = 0;
     sigact.sa_handler = sigcatch;
     sigaction(SIGCHLD, &sigact, NULL);
+
+    /* Reset resolvers. */
+    resetresolv(resolvers);
     
     while (1)
     {
@@ -838,12 +929,38 @@ int main(int argc, char **argv)
     for (progdone = 0; !progdone; )
     {
         int status;
+        struct timeval tv;
+        struct timeval now;
+
+        /* Figure out when to wake up. */
+        if (-1 == gettimeofday(&now, NULL))
+        {
+            logmsg(LOG_ERR, "Couldn't get current time.\n");
+            now.tv_sec = 0;
+            now.tv_usec = 0;
+        }
+
+        tv.tv_sec = resolvttl(resolvers);
+        tv.tv_usec = 0;        
+        if (0 != tv.tv_sec && 0!= now.tv_sec)
+        {
+            tv.tv_sec -= now.tv_sec;
+        }
         
         FD_ZERO(&in);
-        
         FD_SET(sock, &in);
-        
-        found = select(sock + 1, &in, NULL, NULL, NULL);
+
+        if (0 == tv.tv_sec)
+        {
+            /* No timeout. Block while waiting for incoming packet. */
+            found = select(sock + 1, &in, NULL, NULL, NULL);
+        }
+        else
+        {
+            /* Wait for incoming packet or the next expire. */
+            found = select(sock + 1, &in, NULL, NULL, &tv);
+        }
+
         if (-1 == found)
         {
             localerrno = errno;
@@ -857,13 +974,29 @@ int main(int argc, char **argv)
         {
             if (-1 != sock && FD_ISSET(sock, &in))
             {
-                handle_icmp6(sock);
+                handle_icmp6(sock, resolvers, ifname);
             } /* sock */
         } /* if found */
 
+        /* Check for expired DNS servers. */
+        if (expireresolv(resolvers))
+        {
+            /* Some resolvers expired. Maybe do something. */
+        }
+
+        /* Write address(es) to file. */        
+        if (verbose > 0)
+        {
+            printf("Now writing addresses to file %s.\n", filename);
+        }
+        writeresolv(resolvers);
+
+        /* Call external script, if any. */
+        (void)exithook(filename, ifname);
+        
+        /* Reap any zombie exit hook script(s) we might have. */
         if (childcare)
         {
-            /* Reap any zombie exit hook script(s) we might have. */
             while (-1 != waitpid(-1, &status, WNOHANG))
                 ;
             childcare = 0;
