@@ -118,7 +118,8 @@ int childcare = 0;              /* true when we need to reap zombies. */
 struct resolvdns
 {
     struct in6_addr addr;       /* Address to DNS server. */
-    char ifname[IFNAMSIZ];      /* Interface name. */
+    char ifname[IFNAMSIZ];      /* Interface name we received this data on. */
+    time_t arrived;             /* Arrival time of packet. */
     time_t expire;              /* Expire time of this data. */
 };
 
@@ -135,6 +136,7 @@ static void hexdump(u_int8_t *buf, u_int16_t len);
 static void printhelp(void);
 void sigcatch(int sig);
 static int exithook(char *filename, char *ifname);
+static int compare(const void *first, const void *second);
 static void writeresolv(struct resolvdns resolv[]);
 static void logmsg(int pri, const char *message, ...);
 static time_t resolvttl(struct resolvdns resolv[]);
@@ -143,6 +145,7 @@ static void resetresolv(struct resolvdns resolv[]);
 static void addresolver(struct resolvdns resolver, struct resolvdns resolv[]);
 void handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ]);
 
+    
 /*
  * Callback function when we get an ICMP6 message on socket sock.
  */ 
@@ -186,6 +189,7 @@ void handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
     struct in6_pktinfo *pktinfo; /* Metadata about the packet. */
     struct cmsghdr *cmsgp;       /* Pointer to ancillary data. */
     struct resolvdns resolver;
+    struct timeval now;         /*  Time we received this packet. */
     
     if (-1 == (buflen = recvmsg(sock, &msg, 0)))
     {
@@ -198,7 +202,14 @@ void handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
         logmsg(LOG_ERR, "truncated message\n");
         return;
     }
-    
+
+    /* Record when we received this packet. */
+    if (-1 == gettimeofday(&now, NULL))
+    {
+        logmsg(LOG_ERR, "Couldn't get current time. Can't set arrival time.\n");
+        now.tv_sec = 0;
+    }
+
     /* Find our packet information (asked for by the IP6_RECVPKTINFO). */
     for (cmsgp = CMSG_FIRSTHDR(&msg); cmsgp != NULL;
          cmsgp = CMSG_NXTHDR(&msg, cmsgp))
@@ -436,6 +447,7 @@ void handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
 
                 memcpy(&resolver.addr, addrp, sizeof (struct in6_addr));
                 strncpy(resolver.ifname, ifname, IFNAMSIZ);
+                resolver.arrived = now.tv_sec;
                 resolver.expire = ntohl(rdnss->nd_opt_rdns_life);
             
                 addresolver(resolver, resolvers);
@@ -545,6 +557,29 @@ static int exithook(char *filename, char *ifname)
     return 0;
 }
 
+/* Comparison function for qsort(). Sort on arrival time. */
+static int compare(const void *first, const void *second)
+{
+    const struct resolvdns *res1;
+    const struct resolvdns *res2;
+
+    res1 = first;
+    res2 = second;
+        
+    if (res1->arrived < res2->arrived)
+    {
+        return -1;
+    }
+    else if (res1->arrived == res2->arrived)
+    {
+        return 0;
+    }
+    else
+    {
+        return 1;
+    }
+}
+
 /*
  * Write the addresses in of the recursive DNS server in a file.
  */ 
@@ -560,6 +595,8 @@ static void writeresolv(struct resolvdns resolv[])
         goto bad;
     }
 
+    qsort(resolv, MAXNS , sizeof (struct resolvdns), compare);
+    
     for (i = 0; i < MAXNS; i ++)
     {
         char srcaddrstr[INET6_ADDRSTRLEN];          
@@ -690,15 +727,34 @@ static void addresolver(struct resolvdns resolver, struct resolvdns resolv[])
         now.tv_sec = 0;
     }
 
-    /* Find free slot. If not, lose the oldest and overwrite that. */
+    /*
+     * Look for identical resolver, if none, look for free slot, if
+     * not, lose the oldest and overwrite that.
+     */
     for (i = 0; i < MAXNS; i ++)
     {
-        if (0 == resolv[i].expire)
+        if (0 == memcmp(&resolver.addr, &resolv[i].addr, sizeof (resolver.addr)))
         {
-            /* Free slot. */
+            printf("Found identical, %d...\n", i);
             index = i;
             added = 1;
             break;
+        }
+
+    }
+
+    if (!added)
+    {
+        /* No identical found. Looking for free slots... */
+        for (i = 0; i < MAXNS; i ++)
+        {
+            if (0 == resolv[i].expire)
+            {
+                /* Free slot. */
+                index = i;
+                added = 1;
+                break;            
+            }
         }
     }
 
@@ -708,10 +764,10 @@ static void addresolver(struct resolvdns resolver, struct resolvdns resolv[])
         printf("No free slots...\n");
         for (i = 0; i < MAXNS; i ++)
         {
-            if (-1 == index || resolv[i].expire < old_time)
+            if (-1 == index || resolv[i].arrived < old_time)
             {
                 index = i;
-                old_time = resolv[i].expire;
+                old_time = resolv[i].arrived;
 
             }
         }
@@ -909,7 +965,7 @@ int main(int argc, char **argv)
         logmsg(LOG_ERR, "Error from setsockopt(). Terminating.\n");
         exit(1);
     }
-
+    
     /*
      * Daemonize if we're not told to do otherwise. Don't change
      * directory to /, though.
