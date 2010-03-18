@@ -1,6 +1,14 @@
 -*- text -*-
 
-0.9 - 2010-02-26
+0.9 - 2010-03-18
+
+  * Handles time to live.
+
+  * Sorts resolvers by arrival time.
+
+  * Updates identical resolvers by upping ttl.
+
+0.9rc1 - 2010-02-26
 
   * Calls script when new updates arrive. Example script provided in
     radns-script.
