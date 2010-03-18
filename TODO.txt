@@ -1,5 +1,19 @@
 - Handle lifetime of RDNSS.
 
+- When writing resolv.conf, write to temporary file and rename to make
+  it atomic?
+
+- Use logmsg() everywhere. Eliminate printf().
+
+- Add pid file.
+
+- use umask(0)
+
+- misleading comment struct passwd *pw; /* Password entry of the
+  user. */
+
+- autoconf/automake?
+
 - Patch RDNS option into FreeBSD's rtadvd.
 
 - Tests? How?
