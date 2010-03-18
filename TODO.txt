@@ -16,4 +16,6 @@
 
 - Patch RDNS option into FreeBSD's rtadvd.
 
+- Optionally send a router solicitation when starting.
+
 - Tests? How?
