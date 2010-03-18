@@ -8,7 +8,7 @@
 
   * Updates identical resolvers by upping ttl.
 
-0.9rc1 - 2010-02-26
+- 2010-02-26
 
   * Calls script when new updates arrive. Example script provided in
     radns-script.
