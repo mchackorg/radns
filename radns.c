@@ -142,13 +142,13 @@ static time_t resolvttl(struct resolvdns resolv[]);
 static int expireresolv(struct resolvdns resolv[]);
 static void resetresolv(struct resolvdns resolv[]);
 static void addresolver(struct resolvdns resolver, struct resolvdns resolv[]);
-void handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ]);
+int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ]);
 
     
 /*
  * Callback function when we get an ICMP6 message on socket sock.
  */ 
-void handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
+int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
 {
     u_int8_t buf[PACKETSIZE];   /* The entire ICMP6 message. */
     int buflen;                 /* The lenght of the ICMP6 buffer. */
@@ -193,13 +193,13 @@ void handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
     if (-1 == (buflen = recvmsg(sock, &msg, 0)))
     {
         logmsg(LOG_ERR, "read error on raw socket\n");
-        return;
+        return -1;
     }
 
     if (msg.msg_flags & (MSG_TRUNC | MSG_CTRUNC))
     {
         logmsg(LOG_ERR, "truncated message\n");
-        return;
+        return -1;
     }
 
     /* Record when we received this packet. */
@@ -216,7 +216,7 @@ void handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
         if (cmsgp->cmsg_len == 0)
         {
             logmsg(LOG_ERR, "ancillary data with zero length.\n");
-            return;
+            return -1;
         }
 
         if ((cmsgp->cmsg_level == IPPROTO_IPV6) && (cmsgp->cmsg_type
@@ -241,7 +241,7 @@ void handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
                               INET6_ADDRSTRLEN))
         {
             logmsg(LOG_ERR, "Couldn't convert IPv6 address to string\n");
-            return;
+            return -1;
         }
         
         printf("Received an IPv6 Router Advertisement from %s on interface "
@@ -251,7 +251,7 @@ void handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
                               INET6_ADDRSTRLEN))
         {
             logmsg(LOG_ERR, "Couldn't convert IPv6 address to string\n");
-            return;
+            return -1;
         }
 
         printf("Sent to: %s\n", srcaddrstr);
@@ -278,7 +278,7 @@ void handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
         logmsg(LOG_INFO, "Not a Router Advertisement. Type: %d, code: %d. "
                 "Why did we get it?\n",
                 ra->nd_ra_type, ra->nd_ra_code);
-        return;
+        return -1;
     }
 
 /*
@@ -322,7 +322,7 @@ void handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
     {
         /* Out of data. */
         logmsg(LOG_INFO, "Missing data after RA header.\n");
-        return;
+        return -1;
     }
 
     /*
@@ -416,7 +416,7 @@ void handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
             {
                 /* No IPv6 address here. Throw away. */
                 logmsg(LOG_INFO, "No IPv6 address in RDNSS option.\n");
-                return;
+                return -1;
             }
 
             /* Move to first IPv6 address. */
@@ -427,7 +427,7 @@ void handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
             {
                 /* Out of data! */
                 logmsg(LOG_INFO, "RDNSS option: Out of data.\n");
-                return;
+                return -1;
             }
 
             /* How many addresses to DNS servers are there? */
@@ -464,7 +464,7 @@ void handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
         }
     } /* while */        
     
-    return;
+    return 0;
 }
 
 /*
@@ -984,6 +984,7 @@ int main(int argc, char **argv)
     for (progdone = 0; !progdone; )
     {
         int status;
+        int newresolv = 0;
         struct timeval tv;
         struct timeval now;
 
@@ -1029,7 +1030,11 @@ int main(int argc, char **argv)
         {
             if (-1 != sock && FD_ISSET(sock, &in))
             {
-                handle_icmp6(sock, resolvers, ifname);
+                if (0 == handle_icmp6(sock, resolvers, ifname))
+                {
+                    newresolv = 1;
+                }
+                
             } /* sock */
         } /* if found */
 
@@ -1037,17 +1042,23 @@ int main(int argc, char **argv)
         if (expireresolv(resolvers))
         {
             /* Some resolvers expired. Maybe do something. */
+            newresolv = 1;
         }
 
-        /* Write address(es) to file. */        
-        if (verbose > 0)
+        if (newresolv)
         {
-            printf("Now writing addresses to file %s.\n", filename);
-        }
-        writeresolv(resolvers);
+            /* Write address(es) to file. */        
+            if (verbose > 0)
+            {
+                printf("Now writing addresses to file %s.\n", filename);
+            }
+            writeresolv(resolvers);
 
-        /* Call external script, if any. */
-        (void)exithook(filename, ifname);
+            /* Call external script, if any. */
+            (void)exithook(filename, ifname);
+
+            newresolv = 0;
+        }
         
         /* Reap any zombie exit hook script(s) we might have. */
         if (childcare)
