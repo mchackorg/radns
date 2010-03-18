@@ -39,3 +39,5 @@ fi
 # writable by our user, by default 'radns'.
 
 resolvconf -a $if < $resolv_conf
+
+echo +++++++++++++++++ radns+script +++++++++++++++++
