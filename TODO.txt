@@ -1,5 +1,3 @@
-- Handle lifetime of RDNSS.
-
 - When writing resolv.conf, write to temporary file and rename to make
   it atomic?
 
@@ -9,12 +7,9 @@
 
 - use umask(0)
 
-- misleading comment struct passwd *pw; /* Password entry of the
-  user. */
-
 - autoconf/automake?
 
-- Patch RDNS option into FreeBSD's rtadvd.
+- Patch RDNSS option into FreeBSD's rtadvd.
 
 - Optionally send a router solicitation when starting.
 
