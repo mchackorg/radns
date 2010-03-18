@@ -809,7 +809,7 @@ int main(int argc, char **argv)
     fd_set in;                  
     int found;
     char *user = USER;          /* Username we will run as. */
-    struct passwd *pw;          /* Password entry of the user. */
+    struct passwd *pw;          /* User data, for uid and gid. */
     struct sigaction sigact;    /* Signal handler. */
     struct stat sb;             /* For stat() */
     struct resolvdns resolvers[MAXNS]; /* Our resolvers. */
