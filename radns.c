@@ -52,6 +52,7 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <stdarg.h>
 #include <syslog.h>
 #include <unistd.h>
@@ -59,7 +60,7 @@
 #include <getopt.h>
 #include <pwd.h>
 #include <sys/socket.h>
-#include <sys/types.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <net/ethernet.h>
 #include <net/if.h>
@@ -131,7 +132,7 @@ struct straddrs
     int num; /* The number of addresses held in addrbuf. */
 };
 
-static void hexdump(u_int8_t *buf, u_int16_t len);
+static void hexdump(uint8_t *buf, uint16_t len);
 static void printhelp(void);
 void sigcatch(int sig);
 static int exithook(char *filename, char *ifname);
@@ -150,22 +151,22 @@ int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ]);
  */ 
 int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
 {
-    u_int8_t buf[PACKETSIZE];   /* The entire ICMP6 message. */
+    uint8_t buf[PACKETSIZE];   /* The entire ICMP6 message. */
     int buflen;                 /* The lenght of the ICMP6 buffer. */
-    u_int8_t ancbuf[CMSG_SPACE(sizeof (struct in6_pktinfo)) ]; /* Ancillary data. */
+    uint8_t ancbuf[CMSG_SPACE(sizeof (struct in6_pktinfo)) ]; /* Ancillary data. */
     const struct nd_router_advert *ra; /* A Router Advertisement */
     const struct nd_opt_rdnss
     {
-	u_int8_t nd_opt_type; /* Should be 25 (0x19) for RDNSS */
-	u_int8_t nd_opt_len; /* Length: 3 (* 8 octets) if one IPv6
+	uint8_t nd_opt_type; /* Should be 25 (0x19) for RDNSS */
+	uint8_t nd_opt_len; /* Length: 3 (* 8 octets) if one IPv6
                                 address. No of addresses = (Length -
                                 1) / 2.  If less than 3, disregard.*/
-        u_int16_t nd_opt_rdns_res; /* Reserved. */
-        u_int32_t nd_opt_rdns_life; /* The maximum time in seconds to
+        uint16_t nd_opt_rdns_res; /* Reserved. */
+        uint32_t nd_opt_rdns_life; /* The maximum time in seconds to
                                        use this from the time it was
                                        sent. */
     } *rdnss;
-    u_int8_t *datap;            /* An octet pointer we use for running
+    uint8_t *datap;            /* An octet pointer we use for running
                                  * through data in buf. */
     int lenleft;                /* Length left in buf, in bytes,
                                  * counting from datap. */
@@ -633,11 +634,11 @@ bad:
  * Dump the contents of pointer buf of length len as 16 bytes (32
  * hexadecimal digits) per row.
  */
-static void hexdump(u_int8_t *buf, u_int16_t len)
+static void hexdump(uint8_t *buf, uint16_t len)
 {
-    u_int8_t *row; /* Pointer to rows of 16 bytes each. */
-    u_int8_t *byte; /* Pointer to each byte in the row. */
-    u_int8_t *max; /* Pointer to the maximum address in buf. */
+    uint8_t *row; /* Pointer to rows of 16 bytes each. */
+    uint8_t *byte; /* Pointer to each byte in the row. */
+    uint8_t *max; /* Pointer to the maximum address in buf. */
 
     /*
      * Start the row where the buffer begins. Remember where it ends
@@ -734,7 +735,6 @@ static void addresolver(struct resolvdns resolver, struct resolvdns resolv[])
     {
         if (0 == memcmp(&resolver.addr, &resolv[i].addr, sizeof (resolver.addr)))
         {
-            printf("Found identical, %d...\n", i);
             index = i;
             added = 1;
             break;
@@ -760,7 +760,6 @@ static void addresolver(struct resolvdns resolver, struct resolvdns resolv[])
     if (!added)
     {
         /* No free slots. Find oldest resolver and replace it. */
-        printf("No free slots...\n");
         for (i = 0; i < MAXNS; i ++)
         {
             if (-1 == index || resolv[i].arrived < old_time)
@@ -770,7 +769,6 @@ static void addresolver(struct resolvdns resolver, struct resolvdns resolv[])
 
             }
         }
-        printf("...oldest is index %d, time %d\n", index, old_time);        
     }
 
     /* Copy data. */
@@ -790,7 +788,7 @@ static void addresolver(struct resolvdns resolver, struct resolvdns resolv[])
         else
         {
             printf("Added resolver %s, if %s, ttl %d seconds.\n", srcaddrstr,
-                   resolver.ifname, resolver.expire);
+                   resolver.ifname, (int)resolver.expire);
         }
     } /* if verbose */
 
