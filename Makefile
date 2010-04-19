@@ -1,4 +1,4 @@
-VERSION=0.9-ttl3
+VERSION=0.9-pid
 DIST=radns-$(VERSION)
 DISTFILES=LICENSE Makefile NEWS README TODO.txt radns.c
 CFLAGS=-Wall -W -g -DVERSION=\"$(VERSION)\"
