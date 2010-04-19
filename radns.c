@@ -81,6 +81,8 @@
 
 #define RESOLVEFILE "./resolv.conf"
 
+#define PIDFILE "/var/run/radns.pid"
+
 #define USER "radns"
 
 /* The Resolving DNS Server option, RFC 5006. */
@@ -109,6 +111,7 @@
 
 char *progname; /* argv[0] */
 char *filename = RESOLVEFILE;
+char *pidfilename = PIDFILE;
 char *scriptname = NULL;
 int progdone = 0;               /* true when we exit the program. */
 int verbose = 0;                /* how much debug output? */
@@ -144,7 +147,7 @@ static int expireresolv(struct resolvdns resolv[]);
 static void resetresolv(struct resolvdns resolv[]);
 static void addresolver(struct resolvdns resolver, struct resolvdns resolv[]);
 int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ]);
-
+int mkpidfile(uid_t owner, gid_t group);
     
 /*
  * Callback function when we get an ICMP6 message on socket sock.
@@ -665,14 +668,18 @@ static void hexdump(uint8_t *buf, uint16_t len)
 
 static void printhelp(void)
 {
-    fprintf(stderr, "Usage: %s [-v [-v] [-v]] [-f filename] [-u user] [-s script]\n",
-            progname);
+    fprintf(stderr, "Usage: %s [-v [-v] [-v]] [-f filename] [-u user] "
+            " [-s script] [-p pidfile ]\n", progname);
 
     fprintf(stderr, "-f filename gives the filename the DNS resolving address "
             "is written to. Default is ./resolv.conf.\n");
     fprintf(stderr, "-u user sets username to drop priveleges to. "
             "Default is 'radns'.\n");
-    fprintf(stderr, "-s script executes 'script' after receiving a Router Advertisment.\n");
+    fprintf(stderr, "-s script executes 'script' after receiving a Router "
+            "Advertisment.\n");
+    fprintf(stderr, "-p pidfile writes the process ID to 'pidfile'. By default "
+            "it writes the process ID to %s.\n", PIDFILE);
+
     fprintf(stderr, "Repeating -v means more verbosity.\n");
     fprintf(stderr, "Use -V to get version information.\n");
 }
@@ -853,6 +860,63 @@ static void resetresolv(struct resolvdns resolv[])
     }
 }
 
+/*
+ * Write a file with the current process ID.
+ *
+ * Returns 0 on success.
+ */ 
+int mkpidfile(uid_t owner, gid_t group)
+{
+    int filefd;
+    char *buf = NULL;
+    int rc = 0;
+    
+    if (-1 == (filefd = open(pidfilename, O_CREAT | O_WRONLY | O_TRUNC, 0644)))
+    {
+        logmsg(LOG_ERR, "couldn't open pidfile %s\n", pidfilename);
+        rc = -1;        
+	goto end;
+    }
+    
+    if (-1 == asprintf(&buf, "%u\n", (unsigned) getpid()))
+    {
+	logmsg(LOG_ERR, "couldn't allocate memory for pid\n");
+        rc = -1;        
+	goto end;
+    }
+
+    if (-1 == write(filefd, buf, strlen(buf)))
+    {
+	localerrno = errno;
+	logmsg(LOG_ERR, "couldn't write pid: %s\n", strerror(localerrno));
+        rc = -1;
+	goto end;
+    }
+
+    /*
+     * Change owner of file to our new user so we are allowed to
+     * remove it later, after dropping privileges.
+     */
+    if (0 != lchown(pidfilename, owner, group))
+    {
+        localerrno = errno;
+	logmsg(LOG_ERR, "couldn't change owner of file %s\n", pidfilename,
+               strerror(localerrno));
+        rc = -1;
+        goto end;
+    }
+    
+end:
+    close(filefd);
+
+    if (NULL != buf)
+    {
+	free(buf);
+    }
+
+    return rc;
+}
+
 int main(int argc, char **argv)
 {
     char ch;                    /* Option character */
@@ -874,7 +938,7 @@ int main(int argc, char **argv)
     sigact.sa_flags = 0;
     sigact.sa_handler = sigcatch;
     sigaction(SIGCHLD, &sigact, NULL);
-
+    
     /* Reset resolvers. */
     resetresolv(resolvers);
     
@@ -916,12 +980,20 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    /* Drop privileges. */
+    /* Get user information. */
     if (NULL == (pw = getpwnam(user)))
     {
         logmsg(LOG_ERR, "couldn't find user '%s'.\n", user);
         exit(1);
     }
+
+    /* Write our pid to a file. */
+    if (-1 == mkpidfile(pw->pw_uid, pw->pw_gid))
+    {
+        logmsg(LOG_ERR, "Couldn't create pid file.\n");
+    }
+
+    /* Dropping privileges. */
     
     if (0 != setgid(pw->pw_gid) || 0 != setuid(pw->pw_uid))
     {
@@ -930,7 +1002,7 @@ int main(int argc, char **argv)
     }
 
     /****************** Now running as radns user. ******************/
-
+    
     /* Check if there's a script. */
     if (NULL != scriptname && 0 != stat(scriptname, &sb))
     {
