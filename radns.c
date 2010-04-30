@@ -944,7 +944,7 @@ int main(int argc, char **argv)
     
     while (1)
     {
-        ch = getopt(argc, argv, "f:i:s:u:vV");
+        ch = getopt(argc, argv, "f:s:p:u:vV");
         if (-1 == ch)
         {
             /* No more options, break out of while loop. */
@@ -955,6 +955,9 @@ int main(int argc, char **argv)
         {
         case 'f':
             filename = optarg;
+            break;
+        case 'p':
+            pidfilename = optarg;
             break;
         case 's':
             scriptname = optarg;
