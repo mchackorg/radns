@@ -26,7 +26,22 @@ load_rc_config $name
 : ${radns_script="NO"}
 : ${radns_username="ftp"}
 
-command=/usr/local/bin/${name}
+command="/usr/local/bin/${name}"
+
+start_precmd=start_precmd
+stop_postcmd=stop_postcmd
+
+start_precmd()
+{
+    touch ${radns_resolv}
+    chown ${radns_username} ${radns_resolv}
+}
+
+stop_postcmd()
+{
+    rm -f ${radns_resolv}
+    rm -f ${radns_pidfile}
+}
 
 # if script:
 if [ x${radns_script} != "xNO" ]
@@ -37,19 +52,14 @@ else
     command_args="-f ${radns_resolv} -u ${radns_username} -p ${radns_pidfile}"
 fi
 
-stop_postcmd()
-{
-	rm -f ${pidfile}
-}
-
 reload_precmd()
 {
-	echo "Stopping ${name} and start gracefully."
+    echo "Stopping ${name} and start gracefully."
 }
 
 reload_postcmd()
 {
-	rm -f ${pidfile}
+	rm -f ${radns_pidfile}
 	run_rc_command start
 }
 
