@@ -24,7 +24,7 @@ load_rc_config $name
 : ${radns_pidfile="/var/run/${name}.pid"}
 : ${radns_resolv="/etc/radns-resolv.conf"}
 : ${radns_script="NO"}
-: ${radns_username="ftp"}
+: ${radns_username="radns"}
 
 command="/usr/local/bin/${name}"
 
