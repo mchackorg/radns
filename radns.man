@@ -1,0 +1,48 @@
+.TH radns 8 "May 4, 2010" "" ""
+.SH NAME
+radns \- Resolving DNS Server Client for IPv6.
+.SH SYNOPSIS
+\fBradns\fP
+[ \fB\-v\fP 
+[ \fB\-v\fP ] 
+[ \fB\-v\fP ] ] 
+[ \fB\-f\fP \fIpath to resolv file\fP ]
+[ \fB\-u\fP \fIuser\fP ]
+[ \fB\-s\fP \fIpath to script\fP ]
+[ \fB\-p\fP \fIpath to pidfile\fP ]
+
+.SH DESCRIPTION
+.B radns\fP listens for IPv6 Router Advertisements with the Recursive DNS Server
+(RDNSS) option and stores the address(es) in a file in the same syntax
+as resolv.conf(5). It optionally starts a script when it receives a
+Router Advertisement.
+.PP
+.SH OPTIONS
+.TP
+\-V
+prints version information and quits the program.
+.TP
+\-v
+turns on verbose mode and gives more debug output. Also stops the process from
+becoming a daemon. Repeated \-v increases verbosity.
+.TP
+\-f \fIpath to resolv file\fP
+specifies the filename to write the IPv6 addresses to. Default is
+"./resolv.conf".
+.TP
+\-u \fIusername\fP
+specifies the user to drop privileges to. Default is \fIradns\fP.
+.TP
+\-s \fIpath to script\fP
+specifies a program to run after receiving new addresses to DNS
+resolvers. Default is not to run a script.
+.TP
+\-p \fIpath to pidfile\fP
+specifies a path to a file to write the process ID into for process
+management purposes. Default is "/var/run/radns.pid".
+
+.SH AUTHOR
+Michael Cardell Widerkrantz <mc@hack.org>.
+.SH SEE ALSO
+rtadvd(8), radvd(8)
+
