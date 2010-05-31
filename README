@@ -4,8 +4,8 @@ Router Advertisement DNS (radns)
 
 radns listens for IPv6 Router Advertisements with the Recursive DNS
 Server (RDNSS) option and stores the address(es) in a file in the same
-syntax as resolv.conf(5). Currently, the default file name is
-./resolv.conf, but is configurable with -f <filename>.
+syntax as resolv.conf(5). The default file name is ./resolv.conf, but
+it is configurable with -f <filename>.
 
 To use radns in FreeBSD, edit /etc/rc.conf and add:
 
@@ -25,7 +25,7 @@ the command line would be this command as the root user:
 
   # ./radns -f /etc/resolv.conf
 
-The program by default drops priveleges to a user called radns. You
+The program by default drops privileges to a user called radns. You
 can specify another user with -u <username>. The file /etc/resolv.conf
 must be writable by this user.
 
