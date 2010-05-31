@@ -3,8 +3,6 @@
 
 - Use logmsg() everywhere. Eliminate printf().
 
-- Add pid file.
-
 - use umask(0)
 
 - autoconf/automake?
