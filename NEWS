@@ -1,6 +1,16 @@
 -*- text -*-
 
-0.9 - 2010-03-18
+2010-05-28
+
+  * Added man page.
+
+2010-04-30
+
+  * Creates pid file.
+  
+  * Includes rc.d start script for FreeBSD.
+
+2010-03-18
 
   * Handles time to live.
 
@@ -8,13 +18,13 @@
 
   * Updates identical resolvers by upping ttl.
 
-- 2010-02-26
+2010-02-26
 
   * Calls script when new updates arrive. Example script provided in
     radns-script.
 
   * Example script for cooperation with ISC's DHCP client dhclient
-    included.
+    included, see dhclient-exit-hooks.
 
   * Drops privileges early to designated user.
 
