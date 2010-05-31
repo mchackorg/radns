@@ -679,7 +679,7 @@ static void printhelp(void)
 
     fprintf(stderr, "-f filename gives the filename the DNS resolving address "
             "is written to. Default is ./resolv.conf.\n");
-    fprintf(stderr, "-u user sets username to drop priveleges to. "
+    fprintf(stderr, "-u user sets username to drop privileges to. "
             "Default is 'radns'.\n");
     fprintf(stderr, "-s script executes 'script' after receiving a Router "
             "Advertisment.\n");
@@ -1003,7 +1003,7 @@ int main(int argc, char **argv)
     }
 
     /* Dropping privileges. */
-    
+    /* FIXME: setgroups() as well? */
     if (0 != setgid(pw->pw_gid) || 0 != setuid(pw->pw_uid))
     {
         logmsg(LOG_ERR, "couldn't drop privileges\n");
