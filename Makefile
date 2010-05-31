@@ -1,6 +1,7 @@
-VERSION=20100531
+VERSION=20100531-2
 DIST=radns-$(VERSION)
-DISTFILES=LICENSE Makefile NEWS README TODO.txt radns.c
+DISTFILES=LICENSE Makefile NEWS README TODO.txt radns.c radns.man \
+	dhclient-exit-hooks radns-script radns.sh
 CC=gcc
 CFLAGS=-Wall -Wextra -std=c99 -pedantic -g -DVERSION=\"$(VERSION)\"
 #CFLAGS=-Wall -W -g -DVERSION=\"$(VERSION)\" -DDMALLOC -DMALLOC_FUNC_CHECK -I/usr/local/include -L /usr/local/lib -ldmalloc
