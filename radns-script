@@ -1,12 +1,16 @@
 #! /bin/sh
 # -*- shell-script -*-
 
+# Shell script to be called from radns. This will call the resolvconf
+# program which will merge the DNS addresses into the real
+# /etc/resolv.conf.
+
 PATH=$PATH:/usr/local/sbin
 export PATH
 
-echo interface: $if
-echo resolv_conf: $resolv_conf
-
+# For debug
+#echo interface: $if
+#echo resolv_conf: $resolv_conf
 
 if [ "$if" = "" ]
 then
