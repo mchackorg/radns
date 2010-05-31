@@ -1,5 +1,8 @@
 #! /bin/sh
 
+# Place this file in /etc. Will be called by dhclient when it receives
+# new information.
+
 if [ -f /etc/radns-resolv.conf ]
 then
   cp /etc/radns-resolv.conf /etc/resolv.conf
