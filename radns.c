@@ -997,11 +997,34 @@ int main(int argc, char **argv)
         exit(1);
     }
 
+    /*
+     * Daemonize if we're not told to do otherwise. Don't change
+     * directory to /, though.
+     */
+    if (0 == verbose)
+    {
+        openlog(argv[0], LOG_PID | LOG_NDELAY, LOG_DAEMON);
+
+        if (0 != daemon(1, 0))
+        {
+            logmsg(LOG_ERR, "Error from daemon(). Terminating.\n");
+            exit(1);
+        }
+    }
+    
     /* Get user information. */
     if (NULL == (pw = getpwnam(user)))
     {
         logmsg(LOG_ERR, "couldn't find user '%s'.\n", user);
         exit(1);
+    }
+
+    /* Write our pid to a file. We still need to be root to be able to
+     * write to /var/run...
+     */
+    if (-1 == mkpidfile(pw->pw_uid, pw->pw_gid))
+    {
+        logmsg(LOG_ERR, "Couldn't create pid file.\n");
     }
 
     /* Dropping privileges. */
@@ -1044,27 +1067,6 @@ int main(int argc, char **argv)
     {
         logmsg(LOG_ERR, "Error from setsockopt(). Terminating.\n");
         exit(1);
-    }
-    
-    /*
-     * Daemonize if we're not told to do otherwise. Don't change
-     * directory to /, though.
-     */
-    if (0 == verbose)
-    {
-        openlog(argv[0], LOG_PID | LOG_NDELAY, LOG_DAEMON);
-
-        if (0 != daemon(1, 0))
-        {
-            logmsg(LOG_ERR, "Error from daemon(). Terminating.\n");
-            exit(1);
-        }
-    }
-
-    /* Write our pid to a file. */
-    if (-1 == mkpidfile(pw->pw_uid, pw->pw_gid))
-    {
-        logmsg(LOG_ERR, "Couldn't create pid file.\n");
     }
 
     /* Main loop. */
@@ -1119,6 +1121,14 @@ int main(int argc, char **argv)
             {
                 if (1 == handle_icmp6(sock, resolvers, ifname))
                 {
+                    /* We got a new resolver. */
+
+                    /*
+                     * FIXME: Check if we already know it. If so,
+                     * update lifetime and don't write a new
+                     * resolv.conf.
+                     */
+                    
                     newresolv = 1;
                 }
                 
