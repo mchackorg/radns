@@ -8,8 +8,10 @@
 #
 # radns_enable (bool):	Set it to "YES" to enable radns
 #			Default is "NO".
-# radns_resolve (path):	Set full path to radns' own resolv.conf
-# radns_pidfile (path):	Set full path to pid file.
+# radns_resolve (path):	Full path to radns' own resolv.conf
+# radns_pidfile (path):	Full path to pid file.
+# radns_script (path): Full path to script file or empty string if no script.
+# radns_username (user): Username the daemon will run as.
 #
 
 . /etc/rc.subr
