@@ -1,14 +1,14 @@
 #! /bin/sh
 #
 # PROVIDE: radns
-# REQUIRE: network
+# REQUIRE: daemon
 # KEYWORD: shutdown
 # 
 # Add the following lines to /etc/rc.conf to enable radns:
 #
 # radns_enable (bool):	Set it to "YES" to enable radns
 #			Default is "NO".
-# radns_conf (path):	Set full path to radns' own resolv.conf
+# radns_resolve (path):	Set full path to radns' own resolv.conf
 # radns_pidfile (path):	Set full path to pid file.
 #
 
@@ -23,7 +23,7 @@ load_rc_config $name
 : ${radns_enable="NO"}
 : ${radns_pidfile="/var/run/${name}.pid"}
 : ${radns_resolv="/etc/radns-resolv.conf"}
-: ${radns_script="NO"}
+: ${radns_script=""}
 : ${radns_username="radns"}
 
 command="/usr/local/bin/${name}"
@@ -44,7 +44,7 @@ stop_postcmd()
 }
 
 # if script:
-if [ x${radns_script} != "xNO" ]
+if [ x${radns_script} != "x" ]
 then
     command_args="-f ${radns_resolv} -s ${radns_script} -u ${radns_username} \
     -p ${radns_pidfile}"
