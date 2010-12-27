@@ -1,5 +1,16 @@
 -*- text -*-
 
+2010-12-27
+
+  * Embarassing bug appeared when adding aging of information. The
+    resolv.conf would be written to even if we didn't get any RDNSS
+    option! Now fixed.
+
+  * Even more embarassing: mkpidfile() was called before daemon()! Now
+    fixed.
+
+  * Changed rc.d script. Can now start at boot.
+
 2010-05-28
 
   * Added man page.
