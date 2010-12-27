@@ -1,4 +1,4 @@
-VERSION=20100531-2
+VERSION=20101227
 DIST=radns-$(VERSION)
 DISTFILES=LICENSE Makefile NEWS README TODO.txt radns.c radns.man \
 	dhclient-exit-hooks radns-script radns.sh
