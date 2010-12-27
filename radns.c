@@ -157,6 +157,10 @@ int mkpidfile(uid_t owner, gid_t group);
     
 /*
  * Callback function when we get an ICMP6 message on socket sock.
+ *
+ * Returns negative on failure. Returns 0 if succesfully handled, but
+ * no RDNSS. Returns 1 if succesfully handled and we found an RDNSS
+ * option.
  */ 
 int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
 {
@@ -465,6 +469,9 @@ int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
                 datap += sizeof (struct in6_addr);
                 lenleft -= sizeof (struct in6_addr);
             } /* for */
+
+            /* Tell caller we got an RDNSS and succesfully handled it. */
+            return 1; 
         }
         else
         {
@@ -473,7 +480,8 @@ int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
             lenleft -= optlen;
         }
     } /* while */        
-    
+
+    /* No errors occured, but we didn't find any RDNSS options. */
     return 0;
 }
 
@@ -1109,7 +1117,7 @@ int main(int argc, char **argv)
         {
             if (-1 != sock && FD_ISSET(sock, &in))
             {
-                if (0 == handle_icmp6(sock, resolvers, ifname))
+                if (1 == handle_icmp6(sock, resolvers, ifname))
                 {
                     newresolv = 1;
                 }
@@ -1117,9 +1125,12 @@ int main(int argc, char **argv)
             } /* sock */
         } /* if found */
 
+
         /* Check for expired DNS servers. */
         if (expireresolv(resolvers))
         {
+            printf("Something expired.\n");
+
             /* Some resolvers expired. Maybe do something. */
             newresolv = 1;
         }
