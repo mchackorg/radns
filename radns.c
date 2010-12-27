@@ -1004,12 +1004,6 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    /* Write our pid to a file. */
-    if (-1 == mkpidfile(pw->pw_uid, pw->pw_gid))
-    {
-        logmsg(LOG_ERR, "Couldn't create pid file.\n");
-    }
-
     /* Dropping privileges. */
     /* FIXME: setgroups() as well? */
     if (0 != setgid(pw->pw_gid) || 0 != setuid(pw->pw_uid))
@@ -1066,7 +1060,13 @@ int main(int argc, char **argv)
             exit(1);
         }
     }
-                 
+
+    /* Write our pid to a file. */
+    if (-1 == mkpidfile(pw->pw_uid, pw->pw_gid))
+    {
+        logmsg(LOG_ERR, "Couldn't create pid file.\n");
+    }
+
     /* Main loop. */
     for (progdone = 0; !progdone; )
     {
