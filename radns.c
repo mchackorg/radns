@@ -988,6 +988,7 @@ int main(int argc, char **argv)
             break;
         default:
             printhelp();
+            exit(1);
         }
     } /* while */
     
