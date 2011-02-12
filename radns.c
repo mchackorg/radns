@@ -669,7 +669,7 @@ static void hexdump(uint8_t *buf, uint16_t len)
     for (; byte != max; row = byte)
     {
         /* Print byte offset. */
-        printf("%07x ", row - buf);
+        printf("%07tx ", row - buf);
 
         for (byte = row; byte != max && byte != (row + 16); byte ++)
         {
