@@ -1,3 +1,5 @@
+- Update to support RFC 6106, including DNS Search List.
+
 - When writing resolv.conf, write to temporary file and rename to make
   it atomic?
 
@@ -5,9 +7,9 @@
 
 - use umask(0)
 
-- autoconf/automake?
+- Patch RDNSS option into FreeBSD's rtadvd. Maybe done in OpenBSD.
 
-- Patch RDNSS option into FreeBSD's rtadvd.
+  http://marc.info/?l=openbsd-tech&m=129595751431633&w=2
 
 - Optionally send a router solicitation when starting.
 
