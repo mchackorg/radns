@@ -1,5 +1,10 @@
 -*- text -*-
 
+2011-02-18
+
+  * I discovered that we wrote to the file even if the address had
+    expired and contained garbage. Fixed.
+
 2010-12-27
 
   * Embarassing bug appeared when adding aging of information. The
