@@ -5,7 +5,10 @@
 
 if [ -f /etc/radns-resolv.conf ]
 then
-  cp /etc/radns-resolv.conf /etc/resolv.conf
+  > /etc/resolv.conf
+  [ "$new_domain_search" ] && echo search $new_domain_search >> /etc/resolv.conf
+  [ "$new_domain_name" ] && echo domain $new_domain_name >> /etc/resolv.conf
+  cat /etc/radns-resolv.conf >> /etc/resolv.conf
 
   if [ -n "$new_domain_name_servers" ]
   then
