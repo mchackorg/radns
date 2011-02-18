@@ -90,7 +90,7 @@
 #define ND_OPT_RDNSS  25
 
 /* Space for "nameserver %s \n" where %s is the IPv6 address */
-#define NSADDRSIZE (12 + INET6_ADDRSTRLEN)
+#define NSADDRSIZE (13 + INET6_ADDRSTRLEN)
     
 /*
  * XXX PACKETSIZE really taken out of the blue. Expected size of
@@ -577,7 +577,7 @@ static int compare(const void *first, const void *second)
 
     res1 = first;
     res2 = second;
-        
+
     if (res1->arrived < res2->arrived)
     {
         return -1;
