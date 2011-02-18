@@ -578,18 +578,30 @@ static int compare(const void *first, const void *second)
     res1 = first;
     res2 = second;
 
+    if (res1->expire == 0 && res2->expire==0)
+    {
+        return 0;
+    }
+    if (res1->expire == 0)
+    {
+        return 1;
+    }
+    if (res2->expire == 0)
+    {
+        return -1;
+    }
+    
     if (res1->arrived < res2->arrived)
     {
         return -1;
     }
-    else if (res1->arrived == res2->arrived)
+
+    if (res1->arrived == res2->arrived)
     {
         return 0;
     }
-    else
-    {
-        return 1;
-    }
+
+    return 1;
 }
 
 /*
