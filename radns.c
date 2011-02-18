@@ -634,12 +634,12 @@ static void writeresolv(struct resolvdns resolv[])
                 perror("asprintf");
                 goto bad;
             }
-        }
         
-        if (-1 == write(filefd, buf, strlen(buf)))
-        {
-            perror("write");
-            goto bad;
+            if (-1 == write(filefd, buf, strlen(buf)))
+            {
+                perror("write");
+                goto bad;
+            }
         }
 
     } /* for */
