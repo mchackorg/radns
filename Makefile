@@ -1,4 +1,4 @@
-VERSION=20110218
+VERSION=20110218-2
 DIST=radns-$(VERSION)
 DISTFILES=LICENSE Makefile NEWS README TODO.txt radns.c radns.man \
 	dhclient-exit-hooks radns-script radns.sh
@@ -28,3 +28,6 @@ TAGS: *.c *.h
 
 clean:
 	$(RM) -f $(TARGETS) *.o $(DIST).tar.bz2
+
+tag:
+	git tag -a -m $(VERSION) $(VERSION)
