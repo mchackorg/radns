@@ -2,8 +2,12 @@
 
 2011-02-18
 
-  * I discovered that we wrote to the file even if the address had
-    expired and contained garbage. Fixed.
+  * Wrote addresses even if expired or never set. Patch by Peter Chubb.
+
+  * A constant was off by one so we lost linefeed in some scenarios.
+    Patch by Peter Chubb.
+
+  * Ported to OpenBSD. Patch by Janne Johansson.
 
 2010-12-27
 
