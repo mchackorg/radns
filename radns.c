@@ -22,7 +22,7 @@
  * Copyright (c) 2008, Stickybit AB.
  * All rights reserved.
  *
- * Copyright (c) 2009, 2010 Michael Cardell Widerkrantz.
+ * Copyright (c) 2009, 2010, 2011 Michael Cardell Widerkrantz.
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, with or without
@@ -673,7 +673,7 @@ static void hexdump(uint8_t *buf, uint16_t len)
      */
     row = buf;
     max = &buf[len];
-    for (; byte != max; row = byte)
+    for (byte = 0; byte != max; row = byte)
     {
         /* Print byte offset. */
         printf("%07tx ", row - buf);
