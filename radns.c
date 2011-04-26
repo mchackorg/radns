@@ -110,6 +110,11 @@
  */
 #define RDNSSMINLEN 24
 
+/*
+ * Lifetime that never expires.
+ */ 
+#define NEVEREXP 0xffffffff
+
 char *progname; /* argv[0] */
 char *filename = RESOLVEFILE;
 char *pidfilename = PIDFILE;
@@ -840,30 +845,32 @@ static int expireresolv(struct resolvdns resolv[])
     
     for (i = 0; i < MAXNS; i ++)
     {
-        if (0 != resolv[i].expire)
+        if (NEVEREXP == resolv[i].expire)
         {
-            if (resolv[i].expire <= now.tv_sec)
+            break;
+        }
+
+        if (0 != resolv[i].expire && resolv[i].expire <= now.tv_sec)
+        {
+            resolv[i].expire = 0;
+            expired = 1;
+
+            if (verbose > 1)
             {
-                resolv[i].expire = 0;
-                expired = 1;
+                char srcaddrstr[INET6_ADDRSTRLEN];          
 
-                if (verbose > 1)
+                if (NULL == inet_ntop(AF_INET6, &resolv[i].addr,
+                                      srcaddrstr, INET6_ADDRSTRLEN))
                 {
-                    char srcaddrstr[INET6_ADDRSTRLEN];          
-
-                    if (NULL == inet_ntop(AF_INET6, &resolv[i].addr,
-                                          srcaddrstr, INET6_ADDRSTRLEN))
-                    {
-                        logmsg(LOG_ERR, "Couldn't convert IPv6 address to "
-                               "string\n");
-                    }
-                    else
-                    {
-                        printf("Resolver %s expired.\n", srcaddrstr);
-                    }
+                    logmsg(LOG_ERR, "Couldn't convert IPv6 address to "
+                           "string\n");
                 }
-            } /* if expire */
-        } /* if not unset */
+                else
+                {
+                    printf("Resolver %s expired.\n", srcaddrstr);
+                }
+            }
+        } /* if expire */
     } /* for */
 
     return expired;
