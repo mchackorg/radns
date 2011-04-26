@@ -1,5 +1,14 @@
 - Update to support RFC 6106, including DNS Search List.
 
+- A TTL of all 1s is infinity 0xffffffff. Don't remove. Ever, even in
+  2038.
+
+- If TTL == 0, remove! Already in RFC 5006.
+
+- If we only updated expire time, don't write to disk.
+
+- Ignore SIGCHILD instead of wait()? How portable?
+
 - When writing resolv.conf, write to temporary file and rename to make
   it atomic?
 
@@ -8,6 +17,7 @@
 - use umask(0)
 
 - Patch RDNSS option into FreeBSD's rtadvd. Maybe done in OpenBSD.
+  Port?
 
   http://marc.info/?l=openbsd-tech&m=129595751431633&w=2
 
