@@ -60,8 +60,8 @@
 #include <signal.h>
 #include <getopt.h>
 #include <pwd.h>
+#include <time.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/wait.h>
 #include <sys/uio.h>
 #include <net/if.h>
@@ -77,7 +77,7 @@
 #include <dmalloc.h>
 #endif
 
-/* Might be in resolv.h, depending on system. */
+/* XXX Might be in resolv.h, depending on system. Settable at runtime? */
 #define MAXNS 3
 
 #define RESOLVEFILE "./resolv.conf"
@@ -197,7 +197,7 @@ int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
     struct in6_pktinfo *pktinfo; /* Metadata about the packet. */
     struct cmsghdr *cmsgp;       /* Pointer to ancillary data. */
     struct resolvdns resolver;
-    struct timeval now;         /*  Time we received this packet. */
+    struct timespec now;         /*  Time we received this packet. */
     
     if (-1 == (buflen = recvmsg(sock, &msg, 0)))
     {
@@ -212,7 +212,7 @@ int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
     }
 
     /* Record when we received this packet. */
-    if (-1 == gettimeofday(&now, NULL))
+    if (-1 == clock_gettime(CLOCK_MONOTONIC, &now))
     {
         logmsg(LOG_ERR, "Couldn't get current time. Can't set arrival time.\n");
         now.tv_sec = 0;
@@ -743,13 +743,13 @@ static time_t resolvttl(struct resolvdns resolv[])
  */
 static void addresolver(struct resolvdns resolver, struct resolvdns resolv[])
 {
-    struct timeval now;
+    struct timespec now;
     int i;
     int added = 0;
     int index = -1;
     time_t old_time = 0;
     
-    if (-1 == gettimeofday(&now, NULL))
+    if (-1 == clock_gettime(CLOCK_MONOTONIC, &now))
     {
         logmsg(LOG_ERR, "Couldn't get current time. Can't set expire time.\n");
         now.tv_sec = 0;
@@ -761,7 +761,8 @@ static void addresolver(struct resolvdns resolver, struct resolvdns resolv[])
      */
     for (i = 0; i < MAXNS; i ++)
     {
-        if (0 == memcmp(&resolver.addr, &resolv[i].addr, sizeof (resolver.addr)))
+        if (0 == memcmp(&resolver.addr, &resolv[i].addr,
+                        sizeof (resolver.addr)))
         {
             index = i;
             added = 1;
@@ -829,9 +830,9 @@ static int expireresolv(struct resolvdns resolv[])
 {
     int i;
     int expired = 0;
-    struct timeval now;
+    struct timespec now;    
 
-    if (-1 == gettimeofday(&now, NULL))
+    if (-1 == clock_gettime(CLOCK_MONOTONIC, &now))
     {
         logmsg(LOG_ERR, "Couldn't get current time. Can't expire.\n");
         return 0;
@@ -1083,19 +1084,19 @@ int main(int argc, char **argv)
         int status;
         int newresolv = 0;
         struct timeval tv;
-        struct timeval now;
+        struct timespec now;
 
         /* Figure out when to wake up. */
-        if (-1 == gettimeofday(&now, NULL))
+        if (-1 == clock_gettime(CLOCK_MONOTONIC, &now))
         {
             logmsg(LOG_ERR, "Couldn't get current time.\n");
             now.tv_sec = 0;
-            now.tv_usec = 0;
+            now.tv_nsec = 0;
         }
 
         tv.tv_sec = resolvttl(resolvers);
         tv.tv_usec = 0;        
-        if (0 != tv.tv_sec && 0!= now.tv_sec)
+        if (0 != tv.tv_sec && 0 != now.tv_sec)
         {
             tv.tv_sec -= now.tv_sec;
         }
