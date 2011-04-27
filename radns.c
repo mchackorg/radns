@@ -744,7 +744,7 @@ static time_t resolvttl(struct resolvdns resolv[])
 }
 
 /*
- * Add new resolver.
+ * Add new resolver or remove it if expire == 0.
  */
 static void addresolver(struct resolvdns resolver, struct resolvdns resolv[])
 {
@@ -771,14 +771,32 @@ static void addresolver(struct resolvdns resolver, struct resolvdns resolv[])
         {
             index = i;
             added = 1;
-            break;
+            
+            if (0 == resolver.expire)
+            {
+                /* We have been asked to remove this resolver. */
+                resolv[index].expire = 0;
+                return;
+            }
+            else
+            {
+                break;
+            }
         }
-
-    }
+    } /* for */
 
     if (!added)
     {
-        /* No identical found. Looking for free slots... */
+        /*
+         * No identical resolver address were found. Look for free
+         * slots, unless we were asked to remove a resolver we didn't
+         * find, in which case we're finished.
+         */
+        if (0 == resolver.expire)
+        {
+            return;
+        }
+        
         for (i = 0; i < MAXNS; i ++)
         {
             if (0 == resolv[i].expire)
