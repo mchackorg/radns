@@ -1,11 +1,6 @@
 - Update to support RFC 6106, including DNS Search List.
 
-- A TTL of all 1s is infinity 0xffffffff. Don't remove. Ever, even in
-  2038.
-
-- If TTL == 0, remove! Already in RFC 5006.
-
-- If we only updated expire time, don't write to disk.
+- How to deal with several RDNSS options in same RA? Is it allowed?
 
 - Ignore SIGCHILD instead of wait()? How portable?
 
