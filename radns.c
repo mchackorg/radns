@@ -1155,12 +1155,12 @@ int main(int argc, char **argv)
             {
                 if (1 == handle_icmp6(sock, resolvers, ifname))
                 {
-                    /* We got a new resolver. */
+                    /* We got new resolvers. */
 
                     /*
-                     * FIXME: Check if we already know it. If so,
-                     * update lifetime and don't write a new
-                     * resolv.conf.
+                     * FIXME: Check if we already know them and if the
+                     * order of the addresses is unchanged. If so,
+                     * don't write a new resolv.conf.
                      */
                     
                     newresolv = 1;
