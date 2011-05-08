@@ -199,7 +199,7 @@ int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
             .msg_control = ancbuf,
             .msg_controllen = sizeof (ancbuf)
         };                      /* Incoming message. */
-    struct in6_pktinfo *pktinfo; /* Metadata about the packet. */
+    struct in6_pktinfo *pktinfo = NULL; /* Metadata about the packet. */
     struct cmsghdr *cmsgp;       /* Pointer to ancillary data. */
     struct resolvdns resolver;
     struct timespec now;         /*  Time we received this packet. */
