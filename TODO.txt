@@ -1,11 +1,17 @@
+- When writing resolv.conf, write to temporary file and rename to make
+  it atomic.
+
+- Don't write resolv.conf if it would be identical to existing file.
+
 - Update to support RFC 6106, including DNS Search List.
 
 - How to deal with several RDNSS options in same RA? Is it allowed?
 
 - Ignore SIGCHILD instead of wait()? How portable?
 
-- When writing resolv.conf, write to temporary file and rename to make
-  it atomic?
+- qsort() silly with so few elements?
+
+  qsort not stable. We might want something that's stable.
 
 - Use logmsg() everywhere. Eliminate printf().
 
