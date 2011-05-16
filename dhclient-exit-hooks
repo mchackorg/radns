@@ -12,16 +12,16 @@ resolvconf="/etc/resolv.conf"
 
 if [ -f $radns_resolv ]
 then
-  > $resolvconf
-  [ "$new_domain_search" ] && echo search $new_domain_search >> $resolvconf
-  [ "$new_domain_name" ] && echo domain $new_domain_name >> $resolvconf
-  cat /etc/radns-resolv.conf >> $resolvconf
+    > $resolvconf
+    [ "$new_domain_search" ] && echo search $new_domain_search >> $resolvconf
+    [ "$new_domain_name" ] && echo domain $new_domain_name >> $resolvconf
+    cat /etc/radns-resolv.conf >> $resolvconf
 
-  if [ -n "$new_domain_name_servers" ]
-  then
-    for nameserver in $new_domain_name_servers
-    do
-      echo "nameserver $nameserver" >> $resolvconf
-    done
-  fi
+    if [ -n "$new_domain_name_servers" ]
+    then
+        for nameserver in $new_domain_name_servers
+        do
+            echo "nameserver $nameserver" >> $resolvconf
+        done
+    fi
 fi
