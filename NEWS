@@ -1,5 +1,16 @@
 -*- text -*-
 
+2011-05-16
+
+  * Now uses clock_gettime() instead of gettimeofday(). Hopefully this
+    means we're not affected by changes to system time.
+
+  * Stores files in a work directory owned by the radns user, by
+    default /etc/radns.
+
+  * Works in a temporary directory, then renames to the real radns
+    resolv.conf to get atomic changes.
+
 2011-02-18
 
   * Wrote addresses even if expired or never set. Patch by Peter Chubb.
