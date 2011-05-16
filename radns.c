@@ -146,7 +146,7 @@ static void printhelp(void);
 void sigcatch(int sig);
 static int exithook(char *filename, char *ifname);
 static int compare(const void *first, const void *second);
-static void writeresolv(struct resolvdns resolv[]);
+static int writeresolv(struct resolvdns resolv[]);
 static void logmsg(int pri, const char *message, ...);
 static time_t resolvttl(struct resolvdns resolv[]);
 static int expireresolv(struct resolvdns resolv[]);
@@ -612,20 +612,38 @@ static int compare(const void *first, const void *second)
 /*
  * Write the addresses in of the recursive DNS server in a file.
  */ 
-static void writeresolv(struct resolvdns resolv[])
+static int writeresolv(struct resolvdns resolv[])
 {
     int filefd;
     char buf[NSADDRSIZE];
     int i;
+    char *tmpfn;
 
-    if (-1 == (filefd = open(filename, O_CREAT | O_WRONLY | O_TRUNC, 0644)))
+    /*
+     * Create a temporary file in the same directory as our real
+     * resolver file.
+     */
+    if (-1 == asprintf(&tmpfn, "%s-work", filename))
     {
-        logmsg(LOG_ERR, "couldn't open resolv.conf file %s\n", filename);
+        logmsg(LOG_ERR, "Out of memory in writeresolv().\n");
+        return -1;        
+    }
+
+    if (-1 == (filefd = open(tmpfn, O_CREAT | O_WRONLY | O_TRUNC, 0644)))
+    {
+        logmsg(LOG_ERR, "Couldn't open working file %s\n", tmpfn);
         goto bad;
     }
 
-    qsort(resolv, MAXNS , sizeof (struct resolvdns), compare);
+    if (verbose > 2)
+    {
+        printf("Writing addresses to temporary file %s.\n", tmpfn);
+    }
     
+    /* Sort the DNS server addresses based on arrival time. */
+    qsort(resolv, MAXNS , sizeof (struct resolvdns), compare);
+
+    /* Then write them to the file. */
     for (i = 0; i < MAXNS; i ++)
     {
         char srcaddrstr[INET6_ADDRSTRLEN];          
@@ -638,25 +656,55 @@ static void writeresolv(struct resolvdns resolv[])
                 logmsg(LOG_ERR, "Couldn't convert IPv6 address to "
                        "string\n");
             }
-        
-            if (-1 == snprintf(buf, NSADDRSIZE, "nameserver %s\n",
-                               srcaddrstr))
+            else
             {
-                perror("asprintf");
-                goto bad;
-            }
+                if (-1 == snprintf(buf, NSADDRSIZE, "nameserver %s\n",
+                                   srcaddrstr))
+                {
+                    perror("asprintf");
+                    goto bad;
+                }
         
-            if (-1 == write(filefd, buf, strlen(buf)))
-            {
-                perror("write");
-                goto bad;
+                if (-1 == write(filefd, buf, strlen(buf)))
+                {
+                    perror("write");
+                    goto bad;
+                }
             }
         }
-
     } /* for */
+    
+    /* Set file mode. */
+    if (-1 == fchmod(filefd, 0644))
+    {
+	localerrno = errno;
+        logmsg(LOG_ERR, "Couldn't set file mode on %s: %s\n", tmpfn, strerror(localerrno));
+        goto bad;
+    }
 
+    close(filefd);
+
+    /* Rename the temporary file to the real resolv.conf file. */
+
+    if (verbose > 0)
+    {
+        printf("Creating resolver file %s.\n", filename);
+    }
+    
+    if (-1 == (rename(tmpfn, filename)))
+    {
+	localerrno = errno;        
+        logmsg(LOG_ERR, "Couldn't rename %s to %s: %s\n", tmpfn, filename, strerror(localerrno));
+        goto bad;
+    }
+
+    free(tmpfn);
+    return 0;
+    
 bad:
     close(filefd);
+    free(tmpfn);
+    return -1;
 }
 
 /*
@@ -863,7 +911,7 @@ static int expireresolv(struct resolvdns resolv[])
     
     for (i = 0; i < MAXNS; i ++)
     {
-        if (NEVEREXP == resolv[i].expire)
+        if (NEVEREXP == (unsigned) resolv[i].expire)
         {
             break;
         }
@@ -1182,10 +1230,7 @@ int main(int argc, char **argv)
         if (newresolv)
         {
             /* Write address(es) to file. */        
-            if (verbose > 0)
-            {
-                printf("Now writing addresses to file %s.\n", filename);
-            }
+
             writeresolv(resolvers);
 
             /* Call external script, if any. */
