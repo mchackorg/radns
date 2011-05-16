@@ -17,6 +17,7 @@
 . /etc/rc.subr
 
 name=radns
+radns_dir="/etc/radns"
 rcvar=`set_rcvar`
 
 load_rc_config $name
@@ -24,7 +25,7 @@ load_rc_config $name
 # Default values
 : ${radns_enable="NO"}
 : ${radns_pidfile="/var/run/${name}.pid"}
-: ${radns_resolv="/etc/radns-resolv.conf"}
+: ${radns_resolv="${radns_dir}/radns-resolv.conf"}
 : ${radns_script=""}
 : ${radns_username="radns"}
 
@@ -35,8 +36,9 @@ stop_postcmd=stop_postcmd
 
 start_precmd()
 {
-    touch ${radns_resolv}
-    chown ${radns_username} ${radns_resolv}
+    mkdir ${radns_dir}
+    touch ${radns_dir}
+    chown ${radns_username} ${radns_dir}
 }
 
 stop_postcmd()
@@ -61,8 +63,8 @@ reload_precmd()
 
 reload_postcmd()
 {
-	rm -f ${radns_pidfile}
-	run_rc_command start
+    rm -f ${radns_pidfile}
+    run_rc_command start
 }
 
 # actually execute the program

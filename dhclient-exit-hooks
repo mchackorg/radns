@@ -3,18 +3,25 @@
 # Place this file in /etc. Will be called by dhclient when it receives
 # new information.
 
-if [ -f /etc/radns-resolv.conf ]
+# The directory and file radns writes to.
+radns_dir="/etc/radns"
+radns_resolv="${radns_dir}/radns-resolv.conf"
+
+# The real resolv.conf.
+resolvconf="/etc/resolv.conf"
+
+if [ -f $radns_resolv ]
 then
-  > /etc/resolv.conf
-  [ "$new_domain_search" ] && echo search $new_domain_search >> /etc/resolv.conf
-  [ "$new_domain_name" ] && echo domain $new_domain_name >> /etc/resolv.conf
-  cat /etc/radns-resolv.conf >> /etc/resolv.conf
+  > $resolvconf
+  [ "$new_domain_search" ] && echo search $new_domain_search >> $resolvconf
+  [ "$new_domain_name" ] && echo domain $new_domain_name >> $resolvconf
+  cat /etc/radns-resolv.conf >> $resolvconf
 
   if [ -n "$new_domain_name_servers" ]
   then
     for nameserver in $new_domain_name_servers
     do
-      echo "nameserver $nameserver" >>/etc/resolv.conf
+      echo "nameserver $nameserver" >> $resolvconf
     done
   fi
 fi
