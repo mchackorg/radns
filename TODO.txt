@@ -1,6 +1,3 @@
-- When writing resolv.conf, write to temporary file and rename to make
-  it atomic.
-
 - Don't write resolv.conf if it would be identical to existing file.
 
 - Update to support RFC 6106, including DNS Search List.
