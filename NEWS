@@ -13,7 +13,7 @@
 
   * Added DNS servers that never expires.
 
-  * Removed DNS server when asked to by RA (lifetime == 0).
+  * Removes DNS server when asked to by RA (lifetime == 0).
 
 2011-02-18
 
