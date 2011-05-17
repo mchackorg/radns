@@ -11,8 +11,8 @@ To use radns in FreeBSD, edit /etc/rc.conf and add:
 
   radns_enable="YES"
 
-then copy radns.sh to /usr/local/etc/rc.d/radns and start radns as
-root by typing:
+then copy the radns.sh start script in this directory to
+/usr/local/etc/rc.d/radns and start radns as root by typing:
 
  # /usr/local/etc/rc.d/radns start
 
@@ -23,15 +23,20 @@ Look in radns.sh for more variables to set in rc.conf.
 If you want to start radns manually, a typical way to start radns from
 the command line would be this command as the root user:
 
-  # ./radns -f /etc/resolv.conf
+  # ./radns -f /etc/radns/ra-resolv.conf
 
 The program by default drops privileges to a user called radns. You
-can specify another user with -u <username>. The file /etc/resolv.conf
-must be writable by this user.
+can specify another user with -u <username>. The file
+/etc/radns/ra-resolv.conf and the directory /etc/radns must be
+writable by this user.
 
-*Note* that some other programs also might want to modify the same
-file. This will interfer with radns's operation. See below on Dual
-Stack and DHCP.
+If radns is run on an IPv6-only machine, that is with no dual-stack,
+you may want to make /etc/resolv.conf a symbolic link to
+/etc/radns/ra-resolv.conf.
+
+*Note* that some other programs also might want to modify
+/etc/resolv.conf. This will interfer with radns's operation if you
+make a symbolic link. See below on Dual Stack and DHCP.
 
 The program optionally calls another program, usually a shell script,
 to act on the information it receives. Specify the script with -s
@@ -64,29 +69,35 @@ Be sure to change "em0" to what your network interface is called, for
 instance "eth0" for the first NIC on a Linux host.
 
 You need to turn on IPv6 forwarding on your router, otherwise radvd
-won't start.
+won't start. On FreeBSD, this is done by setting
+
+  net.inet6.ip6.forwarding=1
+
+If you want this to survive reboots, set
+
+  ipv6_gateway_enable="YES"
+
+in rc.conf instead.
 
 == Dual Stack and DHCP ==
 
-If you're on a dual stack machine that uses DHCP, chances are that the
-/etc/resolv.conf file will be written to by your DHCP client.
+If you're on a dual stack machine that also uses DHCP, chances are
+that the /etc/resolv.conf file will be written to by your DHCP client.
 
 If this is the case, there are a few things you can do:
 
-* Given that you're running the ISC dhclient:
+* Given that you're running ISC's dhclient, the default DHCP client in
+  FreeBSD:
 
-  1. Copy the dhclient-exit-hooks file in this directory to /etc/.
+  1. Make sure the paths in the dhclient-exit-hooks script in this
+     directory matches the paths used in the radns.sh start script or
+     the values you have overridden in rc.conf.
 
-  2. Do this before starting radns:
-  
-     # touch /etc/radns-resolv.conf
-     # chown radns /etc/radns-resolv.conf
+  2. Copy the dhclient-exit-hooks file to /etc/.
 
-  Configure radns to write the /etc/radns-resolv.conf file.
-
-  This will make sure that the information dhclient receives about a
-  resolving DNS server is merged with radns' information into
-  /etc/resolv.conf. Note, though, that this will only happen when
+  This will merge the information dhclient receives about a resolving
+  DNS server with what radns has received from router advertisments
+  into /etc/resolv.conf. Note, though, that this will only happen when
   dhclient takes action, not when radns receives a Router
   Advertisment.
 
@@ -95,8 +106,8 @@ If this is the case, there are a few things you can do:
   dies in some other way!  This might interfer with normal
   operation. This will be fixed in a future release.
 
-* If your DHCP client uses the resolvconf program (many Linux
-  distributions, but also dns/openresolv in FreeBSD ports):
+* If your DHCP client uses the resolvconf program (found in many Linux
+  distributions, but also as dns/openresolv in FreeBSD ports):
 
   1. Make sure resolvconf's interface directory
      (/usr/local/etc/resolvconf/run/interfaces/ on FreeBSD) is
@@ -105,11 +116,12 @@ If this is the case, there are a few things you can do:
   2. Put the enclosed file 'radns-script' somewhere, for instance in
      /usr/local/bin.
 
-  3. Start radns like this:
+  3. Edit /etc/rc.conf and add
 
-     # touch /etc/radns-resolv.conf
-     # chown radns /etc/radns-resolv.conf     
-     # radns -f /tmp/radns-resolv.conf -s /usr/local/bin/radns-script
+     radns_enable="YES"
+     radns_script="/usr/local/bin/radns-script"
+
+  4. Start radns with the provided radns.sh start script.
 
 == Development ==
 
