@@ -1,5 +1,7 @@
 - Don't write resolv.conf if it would be identical to existing file.
 
+- Signal handler should remove our resolv.conf file.
+
 - Update to support RFC 6106, including DNS Search List.
 
 - How to deal with several RDNSS options in same RA? Is it allowed?
