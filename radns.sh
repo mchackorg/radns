@@ -36,8 +36,7 @@ stop_postcmd=stop_postcmd
 
 start_precmd()
 {
-    mkdir ${radns_dir}
-    touch ${radns_dir}
+    [ -d ${radns_dir} ] || mkdir ${radns_dir}
     chown ${radns_username} ${radns_dir}
 }
 
