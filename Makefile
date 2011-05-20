@@ -1,19 +1,21 @@
-VERSION=20110516
+VERSION=20110520
 DIST=radns-$(VERSION)
-DISTFILES=LICENSE Makefile NEWS README TODO.txt radns.c radns.man \
-	dhclient-exit-hooks radns-script radns.sh
+DISTFILES=LICENSE Makefile NEWS README TODO.txt radns.c list.c list.h \
+	radns.man dhclient-exit-hooks radns-script radns.sh
 CFLAGS+=-Wall -Wextra -std=c99 -pedantic -g -DVERSION=\"$(VERSION)\" \
 	-D _GNU_SOURCE
-#CFLAGS+=-Wall -W -g -DVERSION=\"$(VERSION)\" -DDMALLOC -DMALLOC_FUNC_CHECK -I/usr/local/include -L /usr/local/lib -ldmalloc
 LDFLAGS+=
 LDLIBS+=
 TARGETS=radns
+OBJS=radns.o list.o
 RM=/bin/rm
 
 all: $(TARGETS)
 
-radns: radns.c
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)
+radns: $(OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS) $(LDLIBS)
+
+list.o: list.c list.h Makefile
 
 $(DIST).tar.bz2:
 	mkdir $(DIST)
@@ -28,7 +30,7 @@ TAGS: *.c *.h
 	-etags *.[ch]
 
 clean:
-	$(RM) -f $(TARGETS) *.o $(DIST).tar.bz2
+	$(RM) -f $(TARGETS) $(OBJS) $(DIST).tar.bz2
 
 tag:
 	git tag -a -m $(VERSION) $(VERSION)
