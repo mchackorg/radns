@@ -1,5 +1,9 @@
 -*- text -*-
 
+2011-05-20
+
+  * Added signal handlers so we can clean up when exiting.
+
 2011-05-19
 
   * Major rewrite of the memory management and adding of resolvers.

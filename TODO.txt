@@ -1,11 +1,3 @@
-- Signal handler.
-
-- remove resolv.conf file on exit. Done by start/stop script right now
-  if there, but if we exit as a result of signal not from the
-  start/stop script?
-
-- Ignore SIGCHILD instead of wait()? How portable?
-
 - Support DNS Search List Option.
 
 - Create a FreeBSD port.

@@ -121,10 +121,10 @@ char *progname; /* argv[0] */
 char *filename = RESOLVEFILE;
 char *pidfilename = PIDFILE;
 char *scriptname = NULL;
-int progdone = 0;               /* true when we exit the program. */
+bool progdone;                /* true when we exit the program. */
 int verbose = 0;                /* how much debug output? */
 int localerrno;                 /* our own copy of errno. */
-int childcare = 0;              /* true when we need to reap zombies. */
+bool childcare = false;       /* true when we need to reap zombies. */
 
 /*
  * XXX A default called MAXNS might be in resolv.h, depending on
@@ -887,7 +887,11 @@ void sigcatch(int sig)
     if (SIGCHLD == sig)
     {
         /* A child process died. Tell main loop to deal with it. */
-        childcare = 1;
+        childcare = true;
+    }
+    else
+    {
+        progdone = true;
     }
 }
 
@@ -1284,7 +1288,13 @@ int main(int argc, char **argv)
     sigact.sa_flags = 0;
     sigact.sa_handler = sigcatch;
     sigaction(SIGCHLD, &sigact, NULL);
-    
+    sigaction(SIGINT, &sigact, NULL);
+    sigaction(SIGQUIT, &sigact, NULL);
+    sigaction(SIGTERM, &sigact, NULL);
+
+    sigact.sa_handler = SIG_IGN;    
+    sigaction(SIGHUP, &sigact, NULL);    
+
     while (1)
     {
         ch = getopt(argc, argv, "f:m:s:p:u:vV");
@@ -1411,7 +1421,7 @@ int main(int argc, char **argv)
     }
 
     /* Main loop. */
-    for (progdone = 0; !progdone; )
+    for (progdone = false; !progdone; )
     {
         int status;
         bool newresolv = false;
@@ -1498,14 +1508,16 @@ int main(int argc, char **argv)
         {
             while (-1 != waitpid(-1, &status, WNOHANG))
                 ;
-            childcare = 0;
+            childcare = false;
         }
 
     } /* for */
 
     logmsg(LOG_INFO, "Terminating.\n");
 
+    /* Free all resolvers. Write an empty resolv file. */
     delallres(&reslist);
+    writeresolv(reslist);
     
     exit(0);
 }
