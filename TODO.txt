@@ -1,16 +1,18 @@
-- Don't write resolv.conf if it would be identical to existing file.
+- Signal handler.
 
-- Signal handler should remove our resolv.conf file.
-
-- Update to support RFC 6106, including DNS Search List.
-
-- How to deal with several RDNSS options in same RA? Is it allowed?
+- remove resolv.conf file on exit. Done by start/stop script right now
+  if there, but if we exit as a result of signal not from the
+  start/stop script?
 
 - Ignore SIGCHILD instead of wait()? How portable?
 
-- qsort() silly with so few elements?
+- Support DNS Search List Option.
 
-  qsort not stable. We might want something that's stable.
+- Create a FreeBSD port.
+
+- Create a Debian package.
+
+- How to deal with several RDNSS options in same RA? Is it allowed?
 
 - Use logmsg() everywhere. Eliminate printf().
 
