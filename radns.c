@@ -5,12 +5,7 @@
  * RDNSS (Recursive DNS Server) option.
  *
  * If we see an RDNSS option, we get the IPv6 address to the recursive
- * DNS and store it in a file. The default filename is
- * "./resolv.conf".
- *
- * Example usage:
- *
- *   radns -f /etc/ra-resolv.conf
+ * DNS and store it in a file in the resolv.conf format, resolver(5).
  *
  * Originally written by Michael Cardell Widerkrantz (MC) for
  * Stickybit AB and then maintained by MC.
@@ -55,6 +50,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <syslog.h>
 #include <unistd.h>
 #include <signal.h>
@@ -73,12 +69,18 @@
 #include <fcntl.h>
 #include <string.h>
 #include <errno.h>
-#ifdef DMALLOC
-#include <dmalloc.h>
-#endif
 
-/* XXX Might be in resolv.h, depending on system. Settable at runtime? */
-#define MAXNS 3
+#include "list.h"
+
+/* #define DEBUG 1 */
+/* #define TEST 1 */
+
+#if DEBUG
+#define PDEBUG(Args...) \
+  do { fprintf(stderr, "radns: "); fprintf(stderr, ##Args); } while(0)
+#else
+#define PDEBUG(Args...)
+#endif
 
 #define RESOLVEFILE "./resolv.conf"
 
@@ -124,49 +126,203 @@ int verbose = 0;                /* how much debug output? */
 int localerrno;                 /* our own copy of errno. */
 int childcare = 0;              /* true when we need to reap zombies. */
 
-struct resolvdns
+/*
+ * XXX A default called MAXNS might be in resolv.h, depending on
+ * system. We might want to use that as default if it exists.
+ */
+int maxres = 3;
+
+struct resolver
 {
     struct in6_addr addr;       /* Address to DNS server. */
     char ifname[IFNAMSIZ];      /* Interface name we received this data on. */
     time_t arrived;             /* Arrival time of packet. */
     time_t expire;              /* Expire time of this data. */
+    bool neverexp;
+    struct item *item;          /* Pointer to our place in the list. */
 };
 
-/*
- * Array of printable IPv6 addresses.
- */ 
-struct straddrs
-{
-    char **addrbuf;
-    int num; /* The number of addresses held in addrbuf. */
-};
-
+static struct resolver *expirenext(struct item *reslist);
+static struct resolver *findresolv(struct in6_addr addr, struct item *reslist);
+static void delresolver(struct item **reslist, int *storedres,
+                        struct resolver *res);
+static void deladdr(struct item **reslist, int *storedres,
+                    struct in6_addr addr);
+static void delallres(struct item **reslist);
+static void printrewrite(bool rewrite);
 static void hexdump(uint8_t *buf, uint16_t len);
 static void printhelp(void);
 void sigcatch(int sig);
 static int exithook(char *filename, char *ifname);
-static int compare(const void *first, const void *second);
-static int writeresolv(struct resolvdns resolv[]);
+static int writeresolv(struct item *reslist);
 static void logmsg(int pri, const char *message, ...);
-static time_t resolvttl(struct resolvdns resolv[]);
-static int expireresolv(struct resolvdns resolv[]);
-static void resetresolv(struct resolvdns resolv[]);
-static void addresolver(struct resolvdns resolver, struct resolvdns resolv[]);
-int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ]);
-int mkpidfile(uid_t owner, gid_t group);
+static bool expireresolv(struct item **reslist, int *storedres);
+static bool addresolver(struct item **reslist, int *storedres, uint32_t ttl,
+                        struct in6_addr addr, char *ifname);
+static void listres(struct item *reslist);
+bool handle_icmp6(int sock, struct item **reslist, int *storedres,
+                 char ifname[IFNAMSIZ]);
+static int mkpidfile(uid_t owner, gid_t group);
+
+
+/*
+ * Find resolver in list reslist that will expire next. Returns a
+ * pointer to the resolver or NULL if there are no resolvers.
+ */
+static struct resolver *expirenext(struct item *reslist)
+{
+    time_t least = 0;
+    struct resolver *res;
+    struct resolver *leastres = NULL;
+    struct item *item;
     
+    for (item = reslist; item != NULL; item = item->next)
+    {
+        res = item->data;
+        if (0 != res->expire)
+        {
+            if (0 == least || res->expire < least)
+            {
+                least = res->expire;
+                leastres = res;
+            }
+        }
+    }
+    
+    return leastres;
+}
+
+/*
+ * Find resolver with address addr in list reslist. Returns a pointer
+ * to the matching resolver or NULL if not found.
+ */ 
+static struct resolver *findresolv(struct in6_addr addr, struct item *reslist)
+{
+    struct item *item;
+    struct resolver *res;
+    
+    for (item = reslist; item != NULL; item = item->next)
+    {
+        res = item->data;
+        if (0 == memcmp(&addr, &res->addr, sizeof (addr)))
+        {
+            return res;
+        }
+    }
+
+    return NULL;
+}
+
+/*
+ * Delete the resolver res in list reslist.
+ */
+static void delresolver(struct item **reslist, int *storedres,
+                        struct resolver *res)
+{
+    struct item *item;
+
+    item = res->item;
+    free(item->data);
+    delitem(reslist, item);
+
+    (*storedres) --;
+}
+
+/*
+ * Delete the resolver with address addr in list reslist.
+ */ 
+static void deladdr(struct item **reslist, int *storedres, struct in6_addr addr)
+{
+    struct resolver *res;
+    
+    res = findresolv(addr, *reslist);
+    if (NULL == res)
+    {
+    }
+    else
+    {
+        delresolver(reslist, storedres, res);
+    }
+}
+
+/*
+ * Print a list of all resolvers in reslist to stdout.
+ */
+static void listres(struct item *reslist)
+{
+    struct item *item;
+    struct resolver *res;
+    int i;
+    char addrstr[INET6_ADDRSTRLEN];
+    
+    for (item = reslist, i = 1; item != NULL; item = item->next, i ++)
+    {
+        res = item->data;
+        if (0 == res->expire)
+        {
+            printf("%i:  empty.\n", i);
+        }
+        else
+        {
+            if (NULL == inet_ntop(AF_INET6, &res->addr,
+                                  addrstr, INET6_ADDRSTRLEN))
+            {
+                logmsg(LOG_ERR, "Couldn't convert IPv6 address to "
+                       "string\n");
+            }
+            else
+            {
+                printf("%i:  %s, if %s, expire at %d\n", i, addrstr,
+                       res->ifname, (int)res->expire);
+            }
+        }
+    }
+}
+
+/*
+ * Delete all resolvers in list reslist and free resources.
+ */ 
+static void delallres(struct item **reslist)
+{
+    struct item *item;
+    struct item *next;
+    
+    for (item = *reslist; item != NULL; item = next)
+    {
+        next = item->next;
+        free(item->data);
+        delitem(reslist, item);
+    }
+}
+
+/*
+ * Print on stdout if we need to rewrite or not.
+ */ 
+static void printrewrite(bool rewrite)
+{
+    if (rewrite)
+    {
+        printf("Rewrite.\n");
+    }
+    else
+    {
+        printf("No rewrite.\n");
+    }
+}
+
 /*
  * Callback function when we get an ICMP6 message on socket sock.
  *
- * Returns negative on failure. Returns 0 if succesfully handled, but
- * no RDNSS. Returns 1 if succesfully handled and we found an RDNSS
- * option.
+ * Returns true if we need to rewrite the resolv file and false
+ * otherwise.
  */ 
-int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
+bool handle_icmp6(int sock, struct item **reslist, int *storedres,
+                 char ifname[IFNAMSIZ])
 {
     uint8_t buf[PACKETSIZE];   /* The entire ICMP6 message. */
     int buflen;                 /* The lenght of the ICMP6 buffer. */
-    uint8_t ancbuf[CMSG_SPACE(sizeof (struct in6_pktinfo)) ]; /* Ancillary data. */
+    uint8_t ancbuf[CMSG_SPACE(sizeof (struct in6_pktinfo)) ]; /* Ancillary
+                                                               * data. */
     const struct nd_router_advert *ra; /* A Router Advertisement */
     const struct nd_opt_rdnss
     {
@@ -201,19 +357,19 @@ int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
         };                      /* Incoming message. */
     struct in6_pktinfo *pktinfo = NULL; /* Metadata about the packet. */
     struct cmsghdr *cmsgp;       /* Pointer to ancillary data. */
-    struct resolvdns resolver;
     struct timespec now;         /*  Time we received this packet. */
+    bool rewrite = false;
     
     if (-1 == (buflen = recvmsg(sock, &msg, 0)))
     {
         logmsg(LOG_ERR, "read error on raw socket\n");
-        return -1;
+        return rewrite;
     }
 
     if (msg.msg_flags & (MSG_TRUNC | MSG_CTRUNC))
     {
         logmsg(LOG_ERR, "truncated message\n");
-        return -1;
+        return rewrite;
     }
 
     /* Record when we received this packet. */
@@ -230,7 +386,7 @@ int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
         if (cmsgp->cmsg_len == 0)
         {
             logmsg(LOG_ERR, "ancillary data with zero length.\n");
-            return -1;
+            return rewrite;
         }
 
         if ((cmsgp->cmsg_level == IPPROTO_IPV6) && (cmsgp->cmsg_type
@@ -243,11 +399,12 @@ int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
     /* Convert it to an interface name. */
     if (NULL == if_indextoname(pktinfo->ipi6_ifindex, ifname))
     {
-        logmsg(LOG_ERR, "couldn't find interface name: index %d\n", pktinfo->ipi6_ifindex);
+        logmsg(LOG_ERR, "couldn't find interface name: index %d\n",
+               pktinfo->ipi6_ifindex);
         strncpy(ifname, "<none>", IFNAMSIZ);
     }
 
-    if (verbose > 1)
+    if (verbose > 0)
     {
         char srcaddrstr[INET6_ADDRSTRLEN];          
 
@@ -255,7 +412,7 @@ int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
                               INET6_ADDRSTRLEN))
         {
             logmsg(LOG_ERR, "Couldn't convert IPv6 address to string\n");
-            return -1;
+            return rewrite;
         }
         
         printf("Received an IPv6 Router Advertisement from %s on interface "
@@ -265,7 +422,7 @@ int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
                               INET6_ADDRSTRLEN))
         {
             logmsg(LOG_ERR, "Couldn't convert IPv6 address to string\n");
-            return -1;
+            return rewrite;
         }
 
         printf("Sent to: %s\n", srcaddrstr);
@@ -292,7 +449,7 @@ int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
         logmsg(LOG_INFO, "Not a Router Advertisement. Type: %d, code: %d. "
                 "Why did we get it?\n",
                 ra->nd_ra_type, ra->nd_ra_code);
-        return -1;
+        return rewrite;
     }
 
 /*
@@ -336,7 +493,7 @@ int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
     {
         /* Out of data. */
         logmsg(LOG_INFO, "Missing data after RA header.\n");
-        return -1;
+        return rewrite;
     }
 
     /*
@@ -430,7 +587,7 @@ int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
             {
                 /* No IPv6 address here. Throw away. */
                 logmsg(LOG_INFO, "No IPv6 address in RDNSS option.\n");
-                return -1;
+                return rewrite;
             }
 
             /* Move to first IPv6 address. */
@@ -441,7 +598,7 @@ int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
             {
                 /* Out of data! */
                 logmsg(LOG_INFO, "RDNSS option: Out of data.\n");
-                return -1;
+                return rewrite;
             }
 
             /* How many addresses to DNS servers are there? */
@@ -457,21 +614,18 @@ int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
             for (i = 0; i < nr_of_addrs; i ++)
             {
                 addrp = (struct in6_addr *)datap;
-
-                memcpy(&resolver.addr, addrp, sizeof (struct in6_addr));
-                strncpy(resolver.ifname, ifname, IFNAMSIZ);
-                resolver.arrived = now.tv_sec;
-                resolver.expire = ntohl(rdnss->nd_opt_rdns_life);
             
-                addresolver(resolver, resolvers);
+                rewrite = addresolver(reslist, storedres,
+                                      ntohl(rdnss->nd_opt_rdns_life),
+                                      *addrp, ifname);
                 
                 /* Move to next address, if any. */
                 datap += sizeof (struct in6_addr);
                 lenleft -= sizeof (struct in6_addr);
             } /* for */
 
-            /* Tell caller we got an RDNSS and succesfully handled it. */
-            return 1; 
+            /* Tell caller if we need to rewrite the file. */
+            return rewrite;
         }
         else
         {
@@ -482,7 +636,7 @@ int handle_icmp6(int sock, struct resolvdns resolvers[], char ifname[IFNAMSIZ])
     } /* while */        
 
     /* No errors occured, but we didn't find any RDNSS options. */
-    return 0;
+    return rewrite;
 }
 
 /*
@@ -566,7 +720,8 @@ static int exithook(char *filename, char *ifname)
         if (-1 == execve(scriptname, argv, env))
         {
             localerrno = errno;
-            logmsg(LOG_ERR, "couldn't exec(): %s\nexiting...\n", strerror(localerrno));
+            logmsg(LOG_ERR, "couldn't exec(): %s\nexiting...\n",
+                   strerror(localerrno));
             exit(1);
         }
     } /* child */
@@ -574,51 +729,18 @@ static int exithook(char *filename, char *ifname)
     return 0;
 }
 
-/* Comparison function for qsort(). Sort on arrival time. */
-static int compare(const void *first, const void *second)
-{
-    const struct resolvdns *res1;
-    const struct resolvdns *res2;
-
-    res1 = first;
-    res2 = second;
-
-    if (res1->expire == 0 && res2->expire==0)
-    {
-        return 0;
-    }
-    if (res1->expire == 0)
-    {
-        return 1;
-    }
-    if (res2->expire == 0)
-    {
-        return -1;
-    }
-    
-    if (res1->arrived < res2->arrived)
-    {
-        return -1;
-    }
-
-    if (res1->arrived == res2->arrived)
-    {
-        return 0;
-    }
-
-    return 1;
-}
-
 /*
- * Write the addresses in of the recursive DNS server in a file.
+ * Write all the resolver addresses in list reslist in resolv file.
+ * Returns 0 if successful, -1 otherwise.
  */ 
-static int writeresolv(struct resolvdns resolv[])
+static int writeresolv(struct item *reslist)
 {
     int filefd;
     char buf[NSADDRSIZE];
-    int i;
     char *tmpfn;
-
+    struct item *item;
+    struct resolver *res;
+    
     /*
      * Create a temporary file in the same directory as our real
      * resolver file.
@@ -639,37 +761,33 @@ static int writeresolv(struct resolvdns resolv[])
     {
         printf("Writing addresses to temporary file %s.\n", tmpfn);
     }
-    
-    /* Sort the DNS server addresses based on arrival time. */
-    qsort(resolv, MAXNS , sizeof (struct resolvdns), compare);
 
-    /* Then write them to the file. */
-    for (i = 0; i < MAXNS; i ++)
+    /* Write addresses to file. */
+    for (item = reslist; item != NULL; item = item->next)
     {
-        char srcaddrstr[INET6_ADDRSTRLEN];          
+        char addrstr[INET6_ADDRSTRLEN];          
 
-        if (0 != resolv[i].expire)
+        res = item->data;
+
+        if (NULL == inet_ntop(AF_INET6, &res->addr,
+                              addrstr, INET6_ADDRSTRLEN))
         {
-            if (NULL == inet_ntop(AF_INET6, &resolv[i].addr,
-                                  srcaddrstr, INET6_ADDRSTRLEN))
+            logmsg(LOG_ERR, "Couldn't convert IPv6 address to "
+                   "string\n");
+        }
+        else
+        {
+            if (-1 == snprintf(buf, NSADDRSIZE, "nameserver %s\n",
+                               addrstr))
             {
-                logmsg(LOG_ERR, "Couldn't convert IPv6 address to "
-                       "string\n");
+                perror("asprintf");
+                goto bad;
             }
-            else
-            {
-                if (-1 == snprintf(buf, NSADDRSIZE, "nameserver %s\n",
-                                   srcaddrstr))
-                {
-                    perror("asprintf");
-                    goto bad;
-                }
         
-                if (-1 == write(filefd, buf, strlen(buf)))
-                {
-                    perror("write");
-                    goto bad;
-                }
+            if (-1 == write(filefd, buf, strlen(buf)))
+            {
+                perror("write");
+                goto bad;
             }
         }
     } /* for */
@@ -678,7 +796,8 @@ static int writeresolv(struct resolvdns resolv[])
     if (-1 == fchmod(filefd, 0644))
     {
 	localerrno = errno;
-        logmsg(LOG_ERR, "Couldn't set file mode on %s: %s\n", tmpfn, strerror(localerrno));
+        logmsg(LOG_ERR, "Couldn't set file mode on %s: %s\n", tmpfn,
+               strerror(localerrno));
         goto bad;
     }
 
@@ -694,7 +813,8 @@ static int writeresolv(struct resolvdns resolv[])
     if (-1 == (rename(tmpfn, filename)))
     {
 	localerrno = errno;        
-        logmsg(LOG_ERR, "Couldn't rename %s to %s: %s\n", tmpfn, filename, strerror(localerrno));
+        logmsg(LOG_ERR, "Couldn't rename %s to %s: %s\n", tmpfn, filename,
+               strerror(localerrno));
         goto bad;
     }
 
@@ -740,13 +860,16 @@ static void hexdump(uint8_t *buf, uint16_t len)
     } /* Outer for */
 }
 
+/* Prints a helpful message. */
 static void printhelp(void)
 {
-    fprintf(stderr, "Usage: %s [-v [-v] [-v]] [-f filename] [-u user] "
-            " [-s script] [-p pidfile ]\n", progname);
+    fprintf(stderr, "Usage: %s [-v [-v] [-v]] [-f filename] [-m max resolvers] "
+            "[-u user] [-s script] [-p pidfile ]\n", progname);
 
     fprintf(stderr, "-f filename gives the filename the DNS resolving address "
             "is written to. Default is ./resolv.conf.\n");
+    fprintf(stderr, "-m number-of-resolvers sets an upper limit of how many "
+            "resolver addresses to store. 0 means no upper limit.\n");
     fprintf(stderr, "-u user sets username to drop privileges to. "
             "Default is 'radns'.\n");
     fprintf(stderr, "-s script executes 'script' after receiving a Router "
@@ -769,163 +892,202 @@ void sigcatch(int sig)
 }
 
 /*
- * Return the time of the resolver address with the least time to
- * live left.
- */
-static time_t resolvttl(struct resolvdns resolv[])
-{
-    time_t least = 0;
-    int i;
-    
-    for (i = 0; i < MAXNS; i ++)
-    {
-        if (0 != resolv[i].expire)
-        {
-            if (0 == least || resolv[i].expire < least)
-            {
-                least = resolv[i].expire;
-            }
-        }
-    }
-    
-    return least;
-}
-
-/*
- * Add new resolver or remove it if expire == 0.
- */
-static void addresolver(struct resolvdns resolver, struct resolvdns resolv[])
+ * Add or update a resolver address in list reslist. Returns true if
+ * we need to rewrite the resolv file.
+ *
+ * storedres - pointer to number of stored resolvers.
+ * ttl - time to live as from RA.
+ * addr - the IPv6 address to the resolver.
+ * ifname - interface name string
+ */ 
+static bool addresolver(struct item **reslist, int *storedres, uint32_t ttl,
+                        struct in6_addr addr, char *ifname)
 {
     struct timespec now;
-    int i;
-    int added = 0;
-    int index = -1;
-    time_t old_time = 0;
+    struct resolver *res;
+    struct item *item;
     
     if (-1 == clock_gettime(CLOCK_MONOTONIC, &now))
     {
         logmsg(LOG_ERR, "Couldn't get current time. Can't set expire time.\n");
         now.tv_sec = 0;
     }
-
-    /*
-     * Look for identical resolver, if none, look for free slot, if
-     * not, lose the oldest and overwrite that.
-     */
-    for (i = 0; i < MAXNS; i ++)
-    {
-        if (0 == memcmp(&resolver.addr, &resolv[i].addr,
-                        sizeof (resolver.addr)))
-        {
-            index = i;
-            added = 1;
-            
-            if (0 == resolver.expire)
-            {
-                /* We have been asked to remove this resolver. */
-                resolv[index].expire = 0;
-                return;
-            }
-            else
-            {
-                break;
-            }
-        }
-    } /* for */
-
-    if (!added)
-    {
-        /*
-         * No identical resolver address were found. Look for free
-         * slots, unless we were asked to remove a resolver we didn't
-         * find, in which case we're finished.
-         */
-        if (0 == resolver.expire)
-        {
-            return;
-        }
-        
-        for (i = 0; i < MAXNS; i ++)
-        {
-            if (0 == resolv[i].expire)
-            {
-                /* Free slot. */
-                index = i;
-                added = 1;
-                break;            
-            }
-        }
-    }
-
-    if (!added)
-    {
-        /* No free slots. Find oldest resolver and replace it. */
-        for (i = 0; i < MAXNS; i ++)
-        {
-            if (-1 == index || resolv[i].arrived < old_time)
-            {
-                index = i;
-                old_time = resolv[i].arrived;
-
-            }
-        }
-    }
-
-    /* Copy data. */
-    resolv[index] = resolver;
-    resolv[index].expire += now.tv_sec;
     
-    if (verbose > 1)
-    {
-        char srcaddrstr[INET6_ADDRSTRLEN];          
+    /* Do we know this address already? */
+    res = findresolv(addr, *reslist);
 
-        if (NULL == inet_ntop(AF_INET6, &resolver.addr,
-                              srcaddrstr, INET6_ADDRSTRLEN))
+    if (verbose > 0)
+    {
+        char addrstr[INET6_ADDRSTRLEN];
+
+        if (NULL == inet_ntop(AF_INET6, &addr, addrstr, INET6_ADDRSTRLEN))
         {
-            logmsg(LOG_ERR, "Couldn't convert IPv6 address to "
-                   "string\n");
+            logmsg(LOG_ERR, "Couldn't convert IPv6 address to string.\n");
+            return false;
+        }
+
+        printf("%s is ", addrstr);
+        if (NULL == res)
+        {
+            printf("unknown.\n");
         }
         else
         {
-            printf("Added resolver %s, if %s, ttl %d seconds.\n", srcaddrstr,
-                   resolver.ifname, (int)resolver.expire);
+            printf("already known.\n");
         }
-    } /* if verbose */
+    }
+    
+    if (NULL != res)
+    {
+        /* Yes we know this address. */
+        if (0 == ttl)
+        {
+            /*
+             * TTL from RA is 0, so we're asked to delete this
+             * resolver. Requires rewriting of file. Finished.
+             */
+            if (verbose > 0)
+            {
+                printf("We have been asked to remove it, so we do.\n");
+            }
 
+            delresolver(reslist, storedres, res);
+
+            return true;
+        }
+        else
+        {
+            /*
+             * Time to live != 0: Increase expire time or set the
+             * resolver to never expire. Doesn't require rewriting.
+             * Finished.
+             */
+            if (verbose > 0)
+            {
+                printf("Updating ttl with %d seconds from now.\n", ttl);
+            }
+            if (NEVEREXP == ttl)
+            {
+                res->neverexp = true;
+            }
+            else
+            {
+                res->expire = now.tv_sec + ttl;
+            }
+
+            return false;
+        }
+    }
+    else
+    {
+        /*
+         * The new resolver is unknown to us.
+         * 
+         * Insert at head. If the list has a maximum number of items
+         * and we're full, replace the resolver about to expire next.
+         *
+         * Requires rewriting of resolv file.
+         *
+         */
+
+        if (verbose > 1)
+        {
+            printf("%d resolvers of max %d already stored.\n", *storedres,
+                   maxres);
+        }
+
+        /* 0 is the special case of unlimited number of elements. */
+        if (0 != maxres && *storedres == maxres)
+        {
+            /*
+             * We're full. Find the first address to expire and
+             * replace that.
+             */
+            if (verbose > 1)
+            {
+                printf("We're full. Finding a resolver to replace.");
+            }
+            res = expirenext(*reslist);
+        }
+        else
+        {
+            /* We have room. Add new item. */
+            if (verbose > 1)
+            {
+                printf("Adding a new resolver.\n");
+            }
+
+            item = additem(reslist);
+            res = malloc(sizeof (struct resolver));
+            if (NULL == res)
+            {
+                logmsg(LOG_ERR, "Couldn't allocate memory for new resolver.\n");
+                delitem(reslist, item);
+                return false;
+            }
+            
+            item->data = res;
+            res->item = item;
+            (*storedres) ++;
+        }
+
+        PDEBUG("Copying data...\n");
+            
+        memcpy(&res->addr, &addr, sizeof (struct in6_addr));
+        strncpy(res->ifname, ifname, IFNAMSIZ);
+
+        if (NEVEREXP == ttl)
+        {
+            PDEBUG("Never expire.\n");
+            res->neverexp = true;
+        }
+        else
+        {
+            PDEBUG("New expire is now (%d) + ttl (%d) = %d\n", now.tv_sec, ttl,
+                   now.tv_sec + ttl);
+            res->expire = now.tv_sec + ttl;
+        }
+        
+        return true;
+    }
 }
 
 /*
- * Check for expired DNS resolvers.
+ * Delete any expired DNS resolvers in list reslist with storedres
+ * number of resolvers. Returns
  */ 
-static int expireresolv(struct resolvdns resolv[])
+static bool expireresolv(struct item **reslist, int *storedres)
 {
-    int i;
-    int expired = 0;
+    int expired = false;
     struct timespec now;    
-
+    struct item *item;
+    struct resolver *res;
+    
     if (-1 == clock_gettime(CLOCK_MONOTONIC, &now))
     {
         logmsg(LOG_ERR, "Couldn't get current time. Can't expire.\n");
-        return 0;
+        return expired;
     }
-    
-    for (i = 0; i < MAXNS; i ++)
+
+    for (item = *reslist; item != NULL; item = item->next)    
     {
-        if (NEVEREXP == (unsigned) resolv[i].expire)
+        res = item->data;        
+        if (NEVEREXP == (unsigned) res->expire)
         {
             break;
         }
 
-        if (0 != resolv[i].expire && resolv[i].expire <= now.tv_sec)
+        if (0 != res->expire && res->expire <= now.tv_sec)
         {
-            resolv[i].expire = 0;
-            expired = 1;
+            expired = true;
 
+            delresolver(reslist, storedres, res);
+            
             if (verbose > 1)
             {
                 char srcaddrstr[INET6_ADDRSTRLEN];          
 
-                if (NULL == inet_ntop(AF_INET6, &resolv[i].addr,
+                if (NULL == inet_ntop(AF_INET6, &res->addr,
                                       srcaddrstr, INET6_ADDRSTRLEN))
                 {
                     logmsg(LOG_ERR, "Couldn't convert IPv6 address to "
@@ -943,24 +1105,11 @@ static int expireresolv(struct resolvdns resolv[])
 }
 
 /*
- * Reset all resolvers.
- */
-static void resetresolv(struct resolvdns resolv[])
-{
-    int i;
-
-    for (i = 0; i < MAXNS; i ++)
-    {
-        resolv[i].expire = 0;
-    }
-}
-
-/*
  * Write a file with the current process ID.
  *
  * Returns 0 on success.
  */ 
-int mkpidfile(uid_t owner, gid_t group)
+static int mkpidfile(uid_t owner, gid_t group)
 {
     int filefd;
     char *buf = NULL;
@@ -1012,6 +1161,107 @@ end:
     return rc;
 }
 
+/************************************************************************/
+/* Test main                                                            */
+/************************************************************************/
+#if TEST
+int main(void)
+{
+    struct item *reslist = NULL; /* Linked list of resolvers. */
+    int storedres = 0;
+    struct in6_addr addr;
+    bool rewrite;
+        
+    listres(reslist);
+    
+    /* Add a new resolver. */
+    puts("\n1:");    
+    if (-1 == inet_pton(AF_INET6, "::1", &addr))
+    {
+        logmsg(LOG_ERR, "Couldn't convert IPv6 address to string\n");
+        exit(1);
+    }
+    rewrite = addresolver(&reslist, &storedres, 30, addr, "em0");
+    printrewrite(rewrite);
+    listres(reslist);
+    sleep(1);
+    
+    puts("\nAdd the same again:");
+    if (-1 == inet_pton(AF_INET6, "::1", &addr))
+    {
+        logmsg(LOG_ERR, "Couldn't convert IPv6 address to string\n");
+        exit(1);
+    }
+    rewrite = addresolver(&reslist, &storedres, 30, addr, "em0");
+    printrewrite(rewrite);
+    listres(reslist);    
+    sleep(1);
+    
+    /* Add a new resolver. */
+    puts("\n3:");    
+    if (-1 == inet_pton(AF_INET6, "fe80::216:d3ff:fe21:5a5a", &addr))
+    {
+        logmsg(LOG_ERR, "Couldn't convert IPv6 address to string\n");
+        exit(1);
+    }
+    rewrite = addresolver(&reslist,&storedres, 120, addr, "em0");
+    printrewrite(rewrite);    
+    listres(reslist);
+    sleep(1);
+
+    /* Delete a resolver. */
+    if (-1 == inet_pton(AF_INET6, "::1", &addr))
+    {
+        logmsg(LOG_ERR, "Couldn't convert IPv6 address to string\n");
+        exit(1);
+    }
+    PDEBUG("Deleting ::1.\n");
+    deladdr(&reslist, &storedres, addr);
+    
+    /* Add a new resolver. */
+    puts("\n4:");        
+    if (-1 == inet_pton(AF_INET6, "2001::216:d3ff:fe21:5a5a", &addr))
+    {
+        logmsg(LOG_ERR, "Couldn't convert IPv6 address to string\n");
+        exit(1);
+    }
+    rewrite = addresolver(&reslist,&storedres, 120, addr, "em0");
+    printrewrite(rewrite);        
+    listres(reslist);
+    sleep(1);
+    
+    /* Add a new resolver. */
+    puts("\n5:");            
+    if (-1 == inet_pton(AF_INET6, "2001:16d8:ffff:1:213:2ff:fe0e:9cfa", &addr))
+    {
+        logmsg(LOG_ERR, "Couldn't convert IPv6 address to string\n");
+        exit(1);
+    }
+    rewrite = addresolver(&reslist,&storedres, 120, addr, "wlan1");
+    printrewrite(rewrite);        
+    listres(reslist);
+    sleep(1);
+
+    /* Add a new resolver. */
+    puts("\n6:");            
+    if (-1 == inet_pton(AF_INET6, "2001:16d8:ffff:1:213:2ff:cafe:babe", &addr))
+    {
+        logmsg(LOG_ERR, "Couldn't convert IPv6 address to string\n");
+        exit(1);
+    }
+    rewrite = addresolver(&reslist,&storedres, 120, addr, "wlan1");
+    printrewrite(rewrite);        
+    listres(reslist);
+    sleep(1);
+    
+    delallres(&reslist);
+    
+    exit(0);
+}
+#else
+/************************************************************************/
+/* Real main                                                            */
+/************************************************************************/
 int main(int argc, char **argv)
 {
     char ch;                    /* Option character */
@@ -1024,8 +1274,9 @@ int main(int argc, char **argv)
     struct passwd *pw;          /* User data, for uid and gid. */
     struct sigaction sigact;    /* Signal handler. */
     struct stat sb;             /* For stat() */
-    struct resolvdns resolvers[MAXNS]; /* Our resolvers. */
-    char ifname[IFNAMSIZ];              /* Name of local interface. */
+    struct item *reslist = NULL; /* List of resolver addresses. */
+    int storedres = 0;           /* Number of addresses in list. */
+    char ifname[IFNAMSIZ];       /* Name of local interface. */
         
     progname = argv[0];
 
@@ -1034,12 +1285,9 @@ int main(int argc, char **argv)
     sigact.sa_handler = sigcatch;
     sigaction(SIGCHLD, &sigact, NULL);
     
-    /* Reset resolvers. */
-    resetresolv(resolvers);
-    
     while (1)
     {
-        ch = getopt(argc, argv, "f:s:p:u:vV");
+        ch = getopt(argc, argv, "f:m:s:p:u:vV");
         if (-1 == ch)
         {
             /* No more options, break out of while loop. */
@@ -1050,6 +1298,9 @@ int main(int argc, char **argv)
         {
         case 'f':
             filename = optarg;
+            break;
+        case 'm':
+            maxres = atoi(optarg);
             break;
         case 'p':
             pidfilename = optarg;
@@ -1128,6 +1379,14 @@ int main(int argc, char **argv)
         exit(1);
     }
 
+    /* Initialize resolv file and make sure we can write to it early. */
+    if (0 != writeresolv(reslist))
+    {
+        logmsg(LOG_ERR, "Couldn't create resolv file %s. Exiting...\n",
+               filename);
+        exit(1);
+    }
+
     /* Set a filter so we only get ICMPv6 packets. */
     ICMP6_FILTER_SETBLOCKALL(&filter);
     ICMP6_FILTER_SETPASS(ND_ROUTER_ADVERT, &filter);
@@ -1155,10 +1414,11 @@ int main(int argc, char **argv)
     for (progdone = 0; !progdone; )
     {
         int status;
-        int newresolv = 0;
+        bool newresolv = false;
         struct timeval tv;
         struct timespec now;
-
+        struct resolver *res;
+        
         /* Figure out when to wake up. */
         if (-1 == clock_gettime(CLOCK_MONOTONIC, &now))
         {
@@ -1167,11 +1427,15 @@ int main(int argc, char **argv)
             now.tv_nsec = 0;
         }
 
-        tv.tv_sec = resolvttl(resolvers);
-        tv.tv_usec = 0;        
-        if (0 != tv.tv_sec && 0 != now.tv_sec)
+        res = expirenext(reslist);
+        if (NULL == res)
         {
-            tv.tv_sec -= now.tv_sec;
+            tv.tv_sec = 0;
+        }
+        else
+        {
+            tv.tv_sec = res->expire - now.tv_sec;
+            tv.tv_usec = 0;
         }
         
         FD_ZERO(&in);
@@ -1201,42 +1465,32 @@ int main(int argc, char **argv)
         {
             if (-1 != sock && FD_ISSET(sock, &in))
             {
-                if (1 == handle_icmp6(sock, resolvers, ifname))
+                if (handle_icmp6(sock, &reslist, &storedres, ifname))
                 {
-                    /* We got new resolvers. */
-
-                    /*
-                     * FIXME: Check if we already know them and if the
-                     * order of the addresses is unchanged. If so,
-                     * don't write a new resolv.conf.
-                     */
-                    
-                    newresolv = 1;
+                    /* We got a new message and we need to rewrite. */
+                    newresolv = true;
                 }
-                
             } /* sock */
         } /* if found */
 
-
         /* Check for expired DNS servers. */
-        if (expireresolv(resolvers))
+        if (expireresolv(&reslist, &storedres))
         {
             printf("Something expired.\n");
 
             /* Some resolvers expired. Maybe do something. */
-            newresolv = 1;
+            newresolv = true;
         }
 
         if (newresolv)
         {
             /* Write address(es) to file. */        
-
-            writeresolv(resolvers);
+            writeresolv(reslist);
 
             /* Call external script, if any. */
             (void)exithook(filename, ifname);
 
-            newresolv = 0;
+            newresolv = false;
         }
         
         /* Reap any zombie exit hook script(s) we might have. */
@@ -1250,6 +1504,9 @@ int main(int argc, char **argv)
     } /* for */
 
     logmsg(LOG_INFO, "Terminating.\n");
+
+    delallres(&reslist);
     
     exit(0);
 }
+#endif
