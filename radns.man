@@ -1,4 +1,4 @@
-.TH radns 8 "May 4, 2010" "" ""
+.TH radns 8 "May 19, 2011" "" ""
 .SH NAME
 radns \- Resolving DNS Server Client for IPv6.
 .SH SYNOPSIS
@@ -7,6 +7,7 @@ radns \- Resolving DNS Server Client for IPv6.
 [ \fB\-v\fP ] 
 [ \fB\-v\fP ] ] 
 [ \fB\-f\fP \fIpath to resolv file\fP ]
+[ \fB\-m\fP \fImaximum number of resolver addresses\fP ]
 [ \fB\-u\fP \fIuser\fP ]
 [ \fB\-s\fP \fIpath to script\fP ]
 [ \fB\-p\fP \fIpath to pidfile\fP ]
@@ -29,6 +30,20 @@ becoming a daemon. Repeated \-v increases verbosity.
 \-f \fIpath to resolv file\fP
 specifies the filename to write the IPv6 addresses to. Default is
 "./resolv.conf".
+.PP
+Note that the radns user needs write access to the directory since it
+will create a temporary working file and rename it to whatever you
+specify as the resolv file. Typically you use something like
+/etc/radns/ra-resolv.conf as the resolv file with /etc/radns being
+writable by the radns user.
+.PP
+If radns is run on an IPv6-only machine, with no dual-stack, you may
+want to make /etc/resolv.conf a symbolic link to
+/etc/radns/ra-resolv.conf.
+.TP
+\-m \fImaximum number of resolver addresses\fP
+specifies the number of resolver addresses to store in the resolv.conf
+file. 0 is a special case meaning an unlimited number. The default is 3.
 .TP
 \-u \fIusername\fP
 specifies the user to drop privileges to. Default is \fIradns\fP.
