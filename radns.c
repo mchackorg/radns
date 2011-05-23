@@ -1617,7 +1617,7 @@ end:
 /************************************************************************/
 /* Test main                                                            */
 /************************************************************************/
-#if TEST
+#ifdef TEST
 int main(void)
 {
     struct item *reslist = NULL; /* Linked list of resolvers. */
@@ -1633,6 +1633,8 @@ int main(void)
     rewrite = addsuffix(&suflist, 30, "hack.org.", 9, "em0");
     printrewrite(rewrite);
     listsuf(suflist);
+
+    delall(&suflist);
     
     printf("Resolvers (should be none):\n");
     listres(reslist);
@@ -1717,7 +1719,7 @@ int main(void)
     listres(reslist);
     sleep(1);
     
-    delallres(&reslist);
+    delall(&reslist);
     
     exit(0);
 }
