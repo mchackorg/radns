@@ -1,5 +1,12 @@
 -*- text -*-
 
+2011-05-22
+
+  * Domain Name Search List support added. We now get a list of
+    domains after the "search" keyword in the resolv file if the
+    Router Advertisment contains any domain suffixes (the DNSSL
+    option).
+
 2011-05-20
 
   * Added signal handlers so we can clean up when exiting.
