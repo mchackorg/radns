@@ -88,8 +88,11 @@
 
 #define USER "radns"
 
-/* The Resolving DNS Server option, RFC 5006. */
+/* The Resolving DNS Server option, RFC 6106. */
 #define ND_OPT_RDNSS  25
+
+/* The DNS Search List option, RFC 6106. */
+#define ND_OPT_DNSSL 31
 
 /* Space for "nameserver %s \n" where %s is the IPv6 address */
 #define NSADDRSIZE (13 + INET6_ADDRSTRLEN)
@@ -117,6 +120,11 @@
  */ 
 #define NEVEREXP 0xffffffff
 
+/*
+ * Maximum number of octets in a domain name as per RFC 1035
+ */
+#define MAXNAME 255
+
 char *progname; /* argv[0] */
 char *filename = RESOLVEFILE;
 char *pidfilename = PIDFILE;
@@ -142,28 +150,64 @@ struct resolver
     struct item *item;          /* Pointer to our place in the list. */
 };
 
+struct suffix
+{
+    char name[255];
+    int len;               /* Length of domain name suffix. */
+    char ifname[IFNAMSIZ];      /* Interface name we received this data on. */
+    time_t expire;              /* Expire time of this data. */
+    bool neverexp;
+    struct item *item;          /* Pointer to our place in the list. */
+};
+    
+/* Recursive DNS Server (RDNSS) option in Router Advertisments. */
+struct nd_opt_rdnss
+{
+    uint8_t nd_opt_type; /* Should be 25 (0x19) for RDNSS */
+    uint8_t nd_opt_len; /* Length: 3 (* 8 octets) if one IPv6
+                           address. No of addresses = (Length -
+                           1) / 2.  If less than 3, disregard.*/
+    uint16_t nd_opt_rdns_res; /* Reserved. */
+    uint32_t nd_opt_rdns_life; /* The maximum time in seconds to
+                                  use this from the time it was
+                                  sent. */
+} __packed;
+
+/* DNS Search List option in Router Advertisments. */
+struct nd_opt_dnssl
+{ 
+    uint8_t nd_opt_type;
+    uint8_t nd_opt_len;
+    uint16_t nd_opt_dnssl_res;
+    uint32_t nd_opt_dnssl_life;
+} __packed;
+  
 static struct resolver *expirenext(struct item *reslist);
 static struct resolver *findresolv(struct in6_addr addr, struct item *reslist);
 static void delresolver(struct item **reslist, int *storedres,
                         struct resolver *res);
 static void deladdr(struct item **reslist, int *storedres,
                     struct in6_addr addr);
-static void delallres(struct item **reslist);
+static void delall(struct item **list);
 static void printrewrite(bool rewrite);
 static void hexdump(uint8_t *buf, uint16_t len);
 static void printhelp(void);
 void sigcatch(int sig);
 static int exithook(char *filename, char *ifname);
-static int writeresolv(struct item *reslist);
+static int writeresolv(struct item *suflist, struct item *reslist);
 static void logmsg(int pri, const char *message, ...);
 static bool expireresolv(struct item **reslist, int *storedres);
 static bool addresolver(struct item **reslist, int *storedres, uint32_t ttl,
                         struct in6_addr addr, char *ifname);
 static void listres(struct item *reslist);
-bool handle_icmp6(int sock, struct item **reslist, int *storedres,
-                 char ifname[IFNAMSIZ]);
+static bool addsuffix(struct item **suflist, uint32_t ttl,
+                      char *name, int namelen, char *ifname);
+static void delsuffix(struct item **suflist, struct suffix *suf);
+static struct suffix *sufexpirenext(struct item *suflist);
+static struct suffix *findsuffix(char *name, int namelen, struct item *suflist);
+bool handle_icmp6(int sock, struct item **suflist, struct item **reslist,
+                  int *storedres, char ifname[IFNAMSIZ]);
 static int mkpidfile(uid_t owner, gid_t group);
-
 
 /*
  * Find resolver in list reslist that will expire next. Returns a
@@ -246,6 +290,28 @@ static void deladdr(struct item **reslist, int *storedres, struct in6_addr addr)
 }
 
 /*
+ * Print a list of all domain suffixes in suflist to stdout.
+ */
+static void listsuf(struct item *suflist)
+{
+    struct item *item;
+    struct suffix *suf;
+    int i;
+
+    for (item = suflist, i = 1; item != NULL; item = item->next, i ++)
+    {
+        suf = item->data;
+
+        printf("%i: received on if %s, expires at %d\n", i, 
+               suf->ifname, (int)suf->expire);
+
+        write(1, suf->name, suf->len);
+        putchar('\n');
+    }
+}
+
+
+/*
  * Print a list of all resolvers in reslist to stdout.
  */
 static void listres(struct item *reslist)
@@ -280,18 +346,18 @@ static void listres(struct item *reslist)
 }
 
 /*
- * Delete all resolvers in list reslist and free resources.
+ * Delete all elements in list and free memory resources.
  */ 
-static void delallres(struct item **reslist)
+static void delall(struct item **list)
 {
     struct item *item;
     struct item *next;
     
-    for (item = *reslist; item != NULL; item = next)
+    for (item = *list; item != NULL; item = next)
     {
         next = item->next;
         free(item->data);
-        delitem(reslist, item);
+        delitem(list, item);
     }
 }
 
@@ -310,37 +376,251 @@ static void printrewrite(bool rewrite)
     }
 }
 
+
+bool rdnss(const struct nd_opt_rdnss *rdnssp, int optlen, 
+           int lenleft, struct item **reslist, int *storedres,
+           char ifname[IFNAMSIZ])
+{
+    int nr_of_addrs;
+    int i;
+    struct in6_addr *addrp;      /* An IPv6 address. */
+    uint8_t *datap;            /* An octet pointer we use for running
+                                 * through data in rdnssp. */
+    bool rewrite = false;
+    
+    datap = (uint8_t *)rdnssp;
+    
+    /* We got an RDNSS option, that is,
+     *
+     * type, length, reserved,
+     * lifetime
+     * addresses
+     */
+
+    if (verbose > 2)
+    {
+        printf("  reserved: %d\n", rdnssp->nd_opt_rdns_res);
+        printf("  lifetime: %d\n", ntohl(rdnssp->nd_opt_rdns_life));
+    }
+            
+    /* Extract DNS address(es) from option. */
+
+    /*
+     * Length should be 3 (* 8 octets) if there is one IPv6
+     * address. If less than 3 * 8 octets, disregard this
+     * option.
+     */
+    if (optlen < RDNSSMINLEN)
+    {
+        /* No IPv6 address here. Throw away. */
+        logmsg(LOG_INFO, "No IPv6 address in RDNSS option.\n");
+        return rewrite;
+    }
+
+    /* Move to first IPv6 address. */
+    datap += sizeof (struct nd_opt_rdnss);
+    lenleft -= sizeof (struct nd_opt_rdnss);
+            
+    if (lenleft <= 0)
+    {
+        /* Out of data! */
+        logmsg(LOG_INFO, "RDNSS option: Out of data.\n");
+        return rewrite;
+    }
+
+    /* How many addresses to DNS servers are there? */
+    nr_of_addrs = (rdnssp->nd_opt_len - 1) / 2;
+
+    if (verbose > 0)
+    {
+        printf("%d address(es) to resolving DNS servers found.\n",
+               nr_of_addrs);
+    }
+                
+    /* Find the addresses and store them. */
+    for (i = 0; i < nr_of_addrs; i ++)
+    {
+        addrp = (struct in6_addr *)datap;
+            
+        rewrite = addresolver(reslist, storedres,
+                              ntohl(rdnssp->nd_opt_rdns_life),
+                              *addrp, ifname);
+                
+        /* Move to next address, if any. */
+        datap += sizeof (struct in6_addr);
+        lenleft -= sizeof (struct in6_addr);
+    } /* for */
+
+    /* Tell caller if we need to rewrite the file. */
+    return rewrite;
+}
+
+
+/*
+ * Get a series of labels with RFC 1035 encoding in name and add them
+ * to a domain string, domain.
+ *
+ * Returns length of final domain string which also happens to be the
+ * number of bytes consumed by parsing in name.
+ *
+ * From RFC 1035:
+ * 
+ *   Domain names in messages are expressed in terms of a sequence of
+ *   labels. Each label is represented as a one octet length field
+ *   followed by that number of octets. Since every domain name ends
+ *   with the null label of the root, a domain name is terminated by a
+ *   length byte of zero. The high order two bits of every length
+ *   octet must be zero, and the remaining six bits of the length
+ *   field limit the label to 63 octets or less.
+ *
+ *   To simplify implementations, the total length of a domain name
+ *   (i.e., label octets and label length octets) is restricted to 255
+ *   octets or less.
+ */
+int dnsname(char *domain, uint8_t *name)
+{
+    uint8_t len;                /* Length of label. */
+    uint8_t left = MAXNAME;     /* Number of octets left free in domain. */
+    int strlen;                 /* Length of domain string. */
+    uint8_t *bytep;             /* Octet pointer used to walk the name. */
+
+    strlen = 0;
+
+    /*
+     * Walk through each label and copy each label to the domain
+     * string adding "." between them. When we find a zero length
+     * we're done.
+     */
+    for (bytep = name; (uint8_t) *bytep != 0; )
+    {
+        len = *bytep;
+        bytep ++;
+        left --;
+        
+        if (left > len)
+        {
+            memcpy(&domain[strlen], bytep, len);
+            bytep += (len);
+            left -= (len);
+
+            strlen += len;
+            domain[strlen] = '.';
+            strlen ++;
+        }
+    }
+    
+    return strlen;
+}
+
+bool dnssl(const struct nd_opt_dnssl *dnsslp, int optlen, 
+           int lenleft, struct item **suflist, char ifname[IFNAMSIZ])
+{
+    uint8_t *datap;            /* An octet pointer we use for running
+                                 * through data in rdnssp. */
+    bool rewrite = false;
+    char domain[MAXNAME];
+    int domlen;
+    int optlenleft = optlen;
+    
+    if (verbose > 0)
+    {
+        printf("We received a DNSSL!\n");
+    }
+
+    datap = (uint8_t *)dnsslp;
+
+    if (verbose > 2)
+    {
+        printf("  reserved: %d\n", dnsslp->nd_opt_dnssl_res);
+        printf("  lifetime: %d\n", ntohl(dnsslp->nd_opt_dnssl_life));
+    }
+
+    /*
+     * Length is at minimum 2 (* 8 octets) if there is exactly one
+     * domain. If less, we disregard this option.
+     */
+    if (optlen < 2)
+    {
+        logmsg(LOG_INFO, "No Domain Suffix in DNSSL option.\n");
+        return rewrite;        
+    }
+
+    /*
+    Domain Names of DNS Search List
+                  One or more domain names of DNS Search List that MUST
+                  be encoded using the technique described in Section
+                  3.1 of [RFC1035].  By this technique, each domain
+                  name is represented as a sequence of labels ending in
+                  a zero octet, defined as domain name representation.
+                  For more than one domain name, the corresponding
+                  domain name representations are concatenated as they
+                  are.  Note that for the simple decoding, the domain
+                  names MUST NOT be encoded in a compressed form, as
+                  described in Section 4.1.4 of [RFC1035].  Because the
+                  size of this field MUST be a multiple of 8 octets,
+                  for the minimum multiple including the domain name
+                  representations, the remaining octets other than the
+                  encoding parts of the domain name representations
+                  MUST be padded with zeros.
+    */
+
+    /* Move to first domain suffix. */
+    datap += sizeof (struct nd_opt_dnssl);
+    lenleft -= sizeof (struct nd_opt_dnssl);
+    optlenleft -= sizeof (struct nd_opt_dnssl);
+
+    if (lenleft <= 0)
+    {
+        /* Out of data! */
+        logmsg(LOG_INFO, "DNSSL option: Out of data.\n");
+        return rewrite;
+    }
+
+    while (optlenleft > 0 && lenleft > 0)
+    {
+        printf("optlenleft: %d\n", optlenleft);
+        /*
+         * FIXME: Separate all names and add them to the suflist.
+         */
+        domlen = dnsname(domain, datap);
+        if (0 == domlen)
+        {
+            break;
+        }
+        
+        datap += domlen + 1;
+        lenleft -= domlen + 1;
+        optlenleft -= domlen + 1;
+        
+        printf("Got domain suffix:\n");
+        hexdump((uint8_t *)domain, domlen);
+
+        rewrite = addsuffix(suflist, ntohl(dnsslp->nd_opt_dnssl_life), domain,
+                            domlen, ifname);
+    }
+    
+    return rewrite;
+}
+
 /*
  * Callback function when we get an ICMP6 message on socket sock.
  *
  * Returns true if we need to rewrite the resolv file and false
  * otherwise.
  */ 
-bool handle_icmp6(int sock, struct item **reslist, int *storedres,
-                 char ifname[IFNAMSIZ])
+bool handle_icmp6(int sock, struct item **suflist, struct item **reslist,
+                  int *storedres, char ifname[IFNAMSIZ])
 {
     uint8_t buf[PACKETSIZE];   /* The entire ICMP6 message. */
     int buflen;                 /* The lenght of the ICMP6 buffer. */
     uint8_t ancbuf[CMSG_SPACE(sizeof (struct in6_pktinfo)) ]; /* Ancillary
                                                                * data. */
     const struct nd_router_advert *ra; /* A Router Advertisement */
-    const struct nd_opt_rdnss
-    {
-	uint8_t nd_opt_type; /* Should be 25 (0x19) for RDNSS */
-	uint8_t nd_opt_len; /* Length: 3 (* 8 octets) if one IPv6
-                                address. No of addresses = (Length -
-                                1) / 2.  If less than 3, disregard.*/
-        uint16_t nd_opt_rdns_res; /* Reserved. */
-        uint32_t nd_opt_rdns_life; /* The maximum time in seconds to
-                                       use this from the time it was
-                                       sent. */
-    } *rdnss;
+    struct nd_opt_hdr *ndhdr;    
     uint8_t *datap;            /* An octet pointer we use for running
                                  * through data in buf. */
     int lenleft;                /* Length left in buf, in bytes,
                                  * counting from datap. */
-    struct in6_addr *addrp;      /* An IPv6 address. */
-
     struct sockaddr_in6 src;    /* Source address of RA packet. */
     struct iovec iov[1] =
         {
@@ -534,108 +814,66 @@ bool handle_icmp6(int sock, struct item **reslist, int *storedres,
          * including the type and length bytes.
          */
 
-        rdnss = (struct nd_opt_rdnss *)datap;
+        ndhdr = (struct nd_opt_hdr *)datap;
 
         if (verbose > 0)
         {
-            printf("  option type %d (0x%x)\n", rdnss->nd_opt_type,
-                 rdnss->nd_opt_type);
+            printf("  option type %d (0x%x)\n", ndhdr->nd_opt_type,
+                 ndhdr->nd_opt_type);
         }
 
         /*
          * The nd_opt_len is the number of 64 bit units the option
          * contains including header.
          */
-        optlen = rdnss->nd_opt_len * 8;
+        optlen = ndhdr->nd_opt_len * 8;
 
         if (verbose > 2)
         {
-            printf("  option length in header: %d (0x%x)\n", rdnss->nd_opt_len,
-                   rdnss->nd_opt_len);
+            printf("  option length in header: %d (0x%x)\n", ndhdr->nd_opt_len,
+                   ndhdr->nd_opt_len);
 
             printf("  actual length in bytes: %d\n", optlen);
 
             hexdump(datap, optlen);
         }
-        
-        if (rdnss->nd_opt_type == ND_OPT_RDNSS)
+
+        switch (ndhdr->nd_opt_type)
         {
-            int nr_of_addrs;
-            int i;
+            bool rb;
             
-            /* We got an RDNSS option, that is,
-             *
-             * type, length, reserved,
-             * lifetime
-             * addresses
-             */
+        case ND_OPT_RDNSS:
+            rb = rdnss((const struct nd_opt_rdnss *)datap,
+                       optlen, lenleft, reslist, storedres,
+                       ifname);
 
-            if (verbose > 2)
-            {
-                printf("  reserved: %d\n", rdnss->nd_opt_rdns_res);
-                printf("  lifetime: %d\n", ntohl(rdnss->nd_opt_rdns_life));
-            }
+            rewrite = rewrite || rb;
             
-            /* Extract DNS address(es) from option. */
+            break;
 
-            /*
-             * Length should be 3 (* 8 octets) if there is one IPv6
-             * address. If less than 3 * 8 octets, disregard this
-             * option.
-             */
-            if (optlen < RDNSSMINLEN)
+        case ND_OPT_DNSSL:
+            rb = dnssl((const struct nd_opt_dnssl *)datap,
+                       optlen, lenleft, suflist, ifname);
+
+            rewrite = rewrite || rb;
+
+            break;
+
+        default:
+            /* Not a known option. */
+            if (verbose > 1)
             {
-                /* No IPv6 address here. Throw away. */
-                logmsg(LOG_INFO, "No IPv6 address in RDNSS option.\n");
-                return rewrite;
+                printf("Unknown RA option. Skipping...\n");
             }
+            break;
+        } /* switch */
 
-            /* Move to first IPv6 address. */
-            datap += sizeof (struct nd_opt_rdnss);
-            lenleft -= sizeof (struct nd_opt_rdnss);
-            
-            if (lenleft <= 0)
-            {
-                /* Out of data! */
-                logmsg(LOG_INFO, "RDNSS option: Out of data.\n");
-                return rewrite;
-            }
+        /* Advance beyond this option. */
+        datap += optlen;
+        lenleft -= optlen;        
+    } /* while */  
 
-            /* How many addresses to DNS servers are there? */
-            nr_of_addrs = (rdnss->nd_opt_len - 1) / 2;
-
-            if (verbose > 0)
-            {
-                printf("%d address(es) to resolving DNS servers found.\n",
-                       nr_of_addrs);
-            }
-                
-            /* Find the addresses and store them. */
-            for (i = 0; i < nr_of_addrs; i ++)
-            {
-                addrp = (struct in6_addr *)datap;
-            
-                rewrite = addresolver(reslist, storedres,
-                                      ntohl(rdnss->nd_opt_rdns_life),
-                                      *addrp, ifname);
-                
-                /* Move to next address, if any. */
-                datap += sizeof (struct in6_addr);
-                lenleft -= sizeof (struct in6_addr);
-            } /* for */
-
-            /* Tell caller if we need to rewrite the file. */
-            return rewrite;
-        }
-        else
-        {
-            /* Not an RDNSS option. Skip it. */
-            datap += optlen;
-            lenleft -= optlen;
-        }
-    } /* while */        
-
-    /* No errors occured, but we didn't find any RDNSS options. */
+    /* Tell caller if we need to rewrite resolv file. */
     return rewrite;
 }
 
@@ -733,13 +971,14 @@ static int exithook(char *filename, char *ifname)
  * Write all the resolver addresses in list reslist in resolv file.
  * Returns 0 if successful, -1 otherwise.
  */ 
-static int writeresolv(struct item *reslist)
+static int writeresolv(struct item *suflist, struct item *reslist)
 {
     int filefd;
     char buf[NSADDRSIZE];
     char *tmpfn;
     struct item *item;
     struct resolver *res;
+    struct suffix *suf;
     
     /*
      * Create a temporary file in the same directory as our real
@@ -761,6 +1000,38 @@ static int writeresolv(struct item *reslist)
     {
         printf("Writing addresses to temporary file %s.\n", tmpfn);
     }
+
+    /* FIXME: Need to know if there are any suffixes. */
+    if (-1 == write(filefd, "search ", 7))
+    {
+        perror("write");
+        goto bad;
+    }
+
+    /* Write search list to file. */
+    for (item = suflist; item != NULL; item = item->next)
+    {
+        suf = item->data;
+
+        /* FIXME: Do this in one write(). */        
+        if (-1 == write(filefd, suf->name, suf->len))
+        {
+            perror("write");
+            goto bad;
+        }
+        if (-1 == write(filefd, " ", 1))
+        {
+            perror("write");
+            goto bad;
+        }
+        
+    } /* for */
+
+    if (-1 == write(filefd, "\n", 1))
+    {
+        perror("write");
+        goto bad;
+    }    
 
     /* Write addresses to file. */
     for (item = reslist; item != NULL; item = item->next)
@@ -892,6 +1163,184 @@ void sigcatch(int sig)
     else
     {
         progdone = true;
+    }
+}
+
+static struct suffix *findsuffix(char *name, int namelen, struct item *suflist)
+{
+    struct item *item;
+    struct suffix *suf;
+    
+    for (item = suflist; item != NULL; item = item->next)
+    {
+        suf = item->data;
+
+        if (namelen == suf->len && 0 == memcmp(name, suf->name, suf->len))
+        {
+            return suf;
+        }
+    }
+
+    return NULL;
+}
+
+static struct suffix *sufexpirenext(struct item *suflist)
+{
+    time_t least = 0;
+    struct suffix *suf;
+    struct suffix *leastsuf = NULL;
+    struct item *item;
+    
+    for (item = suflist; item != NULL; item = item->next)
+    {
+        suf = item->data;
+        if (0 != suf->expire)
+        {
+            if (0 == least || suf->expire < least)
+            {
+                least = suf->expire;
+                leastsuf = suf;
+            }
+        }
+    }
+    
+    return leastsuf;
+}
+
+/*
+ * Delete the suffix suf in list suflist.
+ */
+static void delsuffix(struct item **suflist, struct suffix *suf)
+{
+    struct item *item;
+
+    item = suf->item;
+    free(item->data);
+    delitem(suflist, item);
+}
+
+/*
+ * Add or update a domain name suffix in list suflist. Returns true if
+ * we need to rewrite the resolv file.
+ */
+static bool addsuffix(struct item **suflist, uint32_t ttl,
+                      char *name, int namelen, char *ifname)
+{
+    struct timespec now;
+    struct suffix *suf;
+    struct item *item;
+    
+    if (-1 == clock_gettime(CLOCK_MONOTONIC, &now))
+    {
+        logmsg(LOG_ERR, "Couldn't get current time. Can't set expire time.\n");
+        now.tv_sec = 0;
+    }
+    
+    /* Do we know this address already? */
+    suf = findsuffix(name, namelen, *suflist);
+
+    if (verbose > 0)
+    {
+        printf("New suffix is ");
+
+        if (NULL == suf)
+        {
+            printf("unknown.\n");
+        }
+        else
+        {
+            printf("already known.\n");
+        }
+    }
+    
+    if (NULL != suf)
+    {
+        /* Yes we know this suffix. */
+        if (0 == ttl)
+        {
+            /*
+             * TTL from RA is 0, so we're asked to delete this domain
+             * suffix. Requires rewriting of file. Finished.
+             */
+            if (verbose > 0)
+            {
+                printf("We have been asked to remove it, so we do.\n");
+            }
+
+            delsuffix(suflist, suf);
+
+            return true;
+        }
+        else
+        {
+            /*
+             * Time to live != 0: Increase expire time or set the
+             * resolver to never expire. Doesn't require rewriting.
+             * Finished.
+             */
+            if (verbose > 0)
+            {
+                printf("Updating ttl with %d seconds from now.\n", ttl);
+            }
+            if (NEVEREXP == ttl)
+            {
+                suf->neverexp = true;
+            }
+            else
+            {
+                suf->expire = now.tv_sec + ttl;
+            }
+
+            return false;
+        }
+    }
+    else
+    {
+        /*
+         * The new suffix is unknown to us.
+         * 
+         * Insert at head.
+         * 
+         * Requires rewriting of resolv file.
+         *
+         */
+
+        if (verbose > 1)
+        {
+            printf("Adding a new suffix.\n");
+        }
+
+        item = additem(suflist);
+        suf = malloc(sizeof (struct suffix));
+        if (NULL == suf)
+        {
+            logmsg(LOG_ERR, "Couldn't allocate memory for new suffix.\n");
+            delitem(suflist, item);
+            return false;
+        }
+            
+        item->data = suf;
+        suf->item = item;
+
+        PDEBUG("Copying data...\n");
+            
+        memcpy(suf->name, name, namelen);
+        suf->len = namelen;
+        strncpy(suf->ifname, ifname, IFNAMSIZ);
+
+        if (NEVEREXP == ttl)
+        {
+            PDEBUG("Never expire.\n");
+            suf->neverexp = true;
+        }
+        else
+        {
+            PDEBUG("New expire is now (%d) + ttl (%d) = %d\n", now.tv_sec, ttl,
+                   now.tv_sec + ttl);
+            suf->expire = now.tv_sec + ttl;
+        }
+        
+        return true;
     }
 }
 
@@ -1172,12 +1621,22 @@ end:
 int main(void)
 {
     struct item *reslist = NULL; /* Linked list of resolvers. */
+    struct item *suflist = NULL; /* Linked list of domain suffixes. */
     int storedres = 0;
     struct in6_addr addr;
     bool rewrite;
-        
-    listres(reslist);
+
+    printf("Suffixes (should be none)\n");
+    listsuf(suflist);
+
+    printf("Adding hack.org.\n");
+    rewrite = addsuffix(&suflist, 30, "hack.org.", 9, "em0");
+    printrewrite(rewrite);
+    listsuf(suflist);
     
+    printf("Resolvers (should be none):\n");
+    listres(reslist);
+
     /* Add a new resolver. */
     puts("\n1:");    
     if (-1 == inet_pton(AF_INET6, "::1", &addr))
@@ -1279,14 +1738,18 @@ int main(int argc, char **argv)
     struct sigaction sigact;    /* Signal handler. */
     struct stat sb;             /* For stat() */
     struct item *reslist = NULL; /* List of resolver addresses. */
+    struct item *suflist = NULL; /* List of domain suffixes. */    
     int storedres = 0;           /* Number of addresses in list. */
     char ifname[IFNAMSIZ];       /* Name of local interface. */
         
     progname = argv[0];
 
-    /* Install signal handler to deal with death of child processes. */
+    /* Install signal handlers. */
+
     sigact.sa_flags = 0;
     sigact.sa_handler = sigcatch;
+    sigemptyset(&sigact.sa_mask);
+    
     sigaction(SIGCHLD, &sigact, NULL);
     sigaction(SIGINT, &sigact, NULL);
     sigaction(SIGQUIT, &sigact, NULL);
@@ -1336,7 +1799,8 @@ int main(int argc, char **argv)
     
     if (-1 == (sock = socket(AF_INET6, SOCK_RAW, IPPROTO_ICMPV6)))
     {
-        logmsg(LOG_ERR, "Error from socket(). Terminating.\n");
+        logmsg(LOG_ERR, "Error from socket(). Perhaps you're not running as "
+               "root? Terminating.\n");
         exit(1);
     }
 
@@ -1390,7 +1854,7 @@ int main(int argc, char **argv)
     }
 
     /* Initialize resolv file and make sure we can write to it early. */
-    if (0 != writeresolv(reslist))
+    if (0 != writeresolv(suflist, reslist))
     {
         logmsg(LOG_ERR, "Couldn't create resolv file %s. Exiting...\n",
                filename);
@@ -1475,7 +1939,7 @@ int main(int argc, char **argv)
         {
             if (-1 != sock && FD_ISSET(sock, &in))
             {
-                if (handle_icmp6(sock, &reslist, &storedres, ifname))
+                if (handle_icmp6(sock, &suflist, &reslist, &storedres, ifname))
                 {
                     /* We got a new message and we need to rewrite. */
                     newresolv = true;
@@ -1483,6 +1947,8 @@ int main(int argc, char **argv)
             } /* sock */
         } /* if found */
 
+        /* FIXME: Check for expired suffixes. */
+        
         /* Check for expired DNS servers. */
         if (expireresolv(&reslist, &storedres))
         {
@@ -1495,7 +1961,7 @@ int main(int argc, char **argv)
         if (newresolv)
         {
             /* Write address(es) to file. */        
-            writeresolv(reslist);
+            writeresolv(suflist, reslist);
 
             /* Call external script, if any. */
             (void)exithook(filename, ifname);
@@ -1515,9 +1981,10 @@ int main(int argc, char **argv)
 
     logmsg(LOG_INFO, "Terminating.\n");
 
-    /* Free all resolvers. Write an empty resolv file. */
-    delallres(&reslist);
-    writeresolv(reslist);
+    /* Free all resolvers and suffixes. Write an empty resolv file. */
+    delall(&reslist);
+    delall(&suflist);
+    writeresolv(suflist, reslist);
     
     exit(0);
 }
