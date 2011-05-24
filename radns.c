@@ -194,7 +194,6 @@ static struct resolver *expirenext(struct item *reslist);
 static struct resolver *findresolv(struct in6_addr addr, struct item *reslist);
 static void deladdr(struct item **reslist, int *storedres,
                     struct in6_addr addr);
-static void delall(struct item **list);
 static void printrewrite(bool rewrite);
 static void hexdump(uint8_t *buf, uint16_t len);
 static void printhelp(void);
@@ -338,22 +337,6 @@ static void listres(struct item *reslist)
                        res->ifname, (int)res->expire);
             }
         }
-    }
-}
-
-/*
- * Delete all elements in list and free memory resources.
- */ 
-static void delall(struct item **list)
-{
-    struct item *item;
-    struct item *next;
-    
-    for (item = *list; item != NULL; item = next)
-    {
-        next = item->next;
-        free(item->data);
-        delitem(list, item);
     }
 }
 
@@ -1773,7 +1756,7 @@ int main(void)
     listres(reslist);
     sleep(1);
     
-    delall(&reslist);
+    delallitems(&reslist, &storedres);
     
     exit(0);
 }
@@ -2045,8 +2028,8 @@ int main(int argc, char **argv)
     logmsg(LOG_INFO, "Terminating.\n");
 
     /* Free all resolvers and suffixes. Write an empty resolv file. */
-    delall(&reslist);
-    delall(&suflist);
+    delallitems(&reslist, &storedres);
+    delallitems(&suflist, &storedsuf);
     writeresolv(suflist, storedsuf, reslist);
     
     exit(0);
