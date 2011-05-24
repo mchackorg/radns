@@ -25,6 +25,12 @@ void freeitem(struct item **list, int *stored,
               struct item *item);
 
 /*
+ * Delete all items in list. Optionally update number of items in list
+ * if stored != NULL.
+ */
+void delallitems(struct item **list, int *stored);
+
+/*
  * Print all items in mainlist on stdout.
  */ 
 void listitems(struct item *mainlist);
