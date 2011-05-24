@@ -135,10 +135,18 @@ int localerrno;                 /* our own copy of errno. */
 bool childcare = false;       /* true when we need to reap zombies. */
 
 /*
+ * Default for maximum number of stored resolver addresses. Can be
+ * overridden by a runtime option.
+ *
  * XXX A default called MAXNS might be in resolv.h, depending on
  * system. We might want to use that as default if it exists.
  */
 int maxres = 3;
+
+/*
+ * Default for maximum number of stored domain suffixes.
+ */ 
+int maxsuf = 6;
 
 struct resolver
 {
@@ -194,19 +202,22 @@ static void hexdump(uint8_t *buf, uint16_t len);
 static void printhelp(void);
 void sigcatch(int sig);
 static int exithook(char *filename, char *ifname);
-static int writeresolv(struct item *suflist, struct item *reslist);
+static int writeresolv(struct item *suflist, int storedsuf,
+                       struct item *reslist);
 static void logmsg(int pri, const char *message, ...);
 static bool expireresolv(struct item **reslist, int *storedres);
 static bool addresolver(struct item **reslist, int *storedres, uint32_t ttl,
                         struct in6_addr addr, char *ifname);
 static void listres(struct item *reslist);
-static bool addsuffix(struct item **suflist, uint32_t ttl,
+static bool addsuffix(struct item **suflist, int *storedsuf, uint32_t ttl,
                       char *name, int namelen, char *ifname);
-static void delsuffix(struct item **suflist, struct suffix *suf);
+static void delsuffix(struct item **suflist, int *storedsuf,
+                      struct suffix *suf);
 static struct suffix *sufexpirenext(struct item *suflist);
+static bool expiresuffix(struct item **suflist, int *storedsuf);
 static struct suffix *findsuffix(char *name, int namelen, struct item *suflist);
-bool handle_icmp6(int sock, struct item **suflist, struct item **reslist,
-                  int *storedres, char ifname[IFNAMSIZ]);
+bool handle_icmp6(int sock, struct item **suflist, int *storedsuf,
+                  struct item **reslist, int *storedres, char ifname[IFNAMSIZ]);
 static int mkpidfile(uid_t owner, gid_t group);
 
 /*
@@ -513,7 +524,8 @@ int dnsname(char *domain, uint8_t *name)
 }
 
 bool dnssl(const struct nd_opt_dnssl *dnsslp, int optlen, 
-           int lenleft, struct item **suflist, char ifname[IFNAMSIZ])
+           int lenleft, struct item **suflist, int *storedsuf,
+           char ifname[IFNAMSIZ])
 {
     uint8_t *datap;            /* An octet pointer we use for running
                                  * through data in rdnssp. */
@@ -595,8 +607,9 @@ bool dnssl(const struct nd_opt_dnssl *dnsslp, int optlen,
         printf("Got domain suffix:\n");
         hexdump((uint8_t *)domain, domlen);
 
-        rewrite = addsuffix(suflist, ntohl(dnsslp->nd_opt_dnssl_life), domain,
-                            domlen, ifname);
+        rewrite = addsuffix(suflist, storedsuf,
+                            ntohl(dnsslp->nd_opt_dnssl_life), domain, domlen,
+                            ifname);
     }
     
     return rewrite;
@@ -608,8 +621,8 @@ bool dnssl(const struct nd_opt_dnssl *dnsslp, int optlen,
  * Returns true if we need to rewrite the resolv file and false
  * otherwise.
  */ 
-bool handle_icmp6(int sock, struct item **suflist, struct item **reslist,
-                  int *storedres, char ifname[IFNAMSIZ])
+bool handle_icmp6(int sock, struct item **suflist, int *storedsuf,
+                  struct item **reslist, int *storedres, char ifname[IFNAMSIZ])
 {
     uint8_t buf[PACKETSIZE];   /* The entire ICMP6 message. */
     int buflen;                 /* The lenght of the ICMP6 buffer. */
@@ -853,7 +866,7 @@ bool handle_icmp6(int sock, struct item **suflist, struct item **reslist,
 
         case ND_OPT_DNSSL:
             rb = dnssl((const struct nd_opt_dnssl *)datap,
-                       optlen, lenleft, suflist, ifname);
+                       optlen, lenleft, suflist, storedsuf, ifname);
 
             rewrite = rewrite || rb;
 
@@ -971,7 +984,8 @@ static int exithook(char *filename, char *ifname)
  * Write all the resolver addresses in list reslist in resolv file.
  * Returns 0 if successful, -1 otherwise.
  */ 
-static int writeresolv(struct item *suflist, struct item *reslist)
+static int writeresolv(struct item *suflist, int storedsuf,
+                       struct item *reslist)
 {
     int filefd;
     char buf[NSADDRSIZE];
@@ -1001,37 +1015,38 @@ static int writeresolv(struct item *suflist, struct item *reslist)
         printf("Writing addresses to temporary file %s.\n", tmpfn);
     }
 
-    /* FIXME: Need to know if there are any suffixes. */
-    if (-1 == write(filefd, "search ", 7))
+    if (storedsuf > 0)
     {
-        perror("write");
-        goto bad;
-    }
-
-    /* Write search list to file. */
-    for (item = suflist; item != NULL; item = item->next)
-    {
-        suf = item->data;
-
-        /* FIXME: Do this in one write(). */        
-        if (-1 == write(filefd, suf->name, suf->len))
+        if (-1 == write(filefd, "search ", 7))
         {
             perror("write");
             goto bad;
         }
-        if (-1 == write(filefd, " ", 1))
+
+        /* Write search list to file. */
+        for (item = suflist; item != NULL; item = item->next)
+        {
+            suf = item->data;
+
+            /* FIXME: Do this in one write(). */        
+            if (-1 == write(filefd, suf->name, suf->len))
+            {
+                perror("write");
+                goto bad;
+            }
+            if (-1 == write(filefd, " ", 1))
+            {
+                perror("write");
+                goto bad;
+            }
+        } /* for */
+
+        if (-1 == write(filefd, "\n", 1))
         {
             perror("write");
             goto bad;
         }
-        
-    } /* for */
-
-    if (-1 == write(filefd, "\n", 1))
-    {
-        perror("write");
-        goto bad;
-    }    
+    } /* if storedsuf */
 
     /* Write addresses to file. */
     for (item = reslist; item != NULL; item = item->next)
@@ -1207,23 +1222,62 @@ static struct suffix *sufexpirenext(struct item *suflist)
     return leastsuf;
 }
 
+static bool expiresuffix(struct item **suflist, int *storedsuf)
+{
+    int expired = false;
+    struct timespec now;    
+    struct item *item;
+    struct suffix *suf;
+    
+    if (-1 == clock_gettime(CLOCK_MONOTONIC, &now))
+    {
+        logmsg(LOG_ERR, "Couldn't get current time. Can't expire.\n");
+        return expired;
+    }
+
+    for (item = *suflist; item != NULL; item = item->next)
+    {
+        suf = item->data;
+        if (NEVEREXP == (unsigned) suf->expire)
+        {
+            break;
+        }
+
+        if (0 != suf->expire && suf->expire <= now.tv_sec)
+        {
+            expired = true;
+
+            delsuffix(suflist, storedsuf, suf);
+
+            if (verbose > 1)
+            {
+                printf("Suffix expired.\n");
+            }
+        }
+    } /* for */
+
+    return expired;    
+}
+
 /*
  * Delete the suffix suf in list suflist.
  */
-static void delsuffix(struct item **suflist, struct suffix *suf)
+static void delsuffix(struct item **suflist, int *storedsuf, struct suffix *suf)
 {
     struct item *item;
 
     item = suf->item;
     free(item->data);
     delitem(suflist, item);
+
+    (*storedsuf) --;    
 }
 
 /*
  * Add or update a domain name suffix in list suflist. Returns true if
  * we need to rewrite the resolv file.
  */
-static bool addsuffix(struct item **suflist, uint32_t ttl,
+static bool addsuffix(struct item **suflist, int *storedsuf, uint32_t ttl,
                       char *name, int namelen, char *ifname)
 {
     struct timespec now;
@@ -1267,7 +1321,7 @@ static bool addsuffix(struct item **suflist, uint32_t ttl,
                 printf("We have been asked to remove it, so we do.\n");
             }
 
-            delsuffix(suflist, suf);
+            delsuffix(suflist, storedsuf, suf);
 
             return true;
         }
@@ -1299,7 +1353,8 @@ static bool addsuffix(struct item **suflist, uint32_t ttl,
         /*
          * The new suffix is unknown to us.
          * 
-         * Insert at head.
+         * Insert at head. If the list has a maximum number of items
+         * and we're full, replace the suffix about to expire next.
          * 
          * Requires rewriting of resolv file.
          *
@@ -1307,21 +1362,44 @@ static bool addsuffix(struct item **suflist, uint32_t ttl,
 
         if (verbose > 1)
         {
-            printf("Adding a new suffix.\n");
+            printf("%d suffixes of max %d already stored.\n", *storedsuf,
+                   maxsuf);
         }
 
-        item = additem(suflist);
-        suf = malloc(sizeof (struct suffix));
-        if (NULL == suf)
+        /* 0 is the special case of unlimited number of elements. */
+        if (0 != maxsuf && *storedsuf == maxsuf)
         {
-            logmsg(LOG_ERR, "Couldn't allocate memory for new suffix.\n");
-            delitem(suflist, item);
-            return false;
+            /*
+             * We're full. Find the first to expire and replace that.
+             */
+            if (verbose > 1)
+            {
+                printf("We're full. Finding a suffix to replace.");
+            }
+            suf = sufexpirenext(*suflist);
         }
-            
-        item->data = suf;
-        suf->item = item;
+        else
+        {
+            if (verbose > 1)
+            {
+                printf("Adding a new suffix.\n");
+            }
 
+            item = additem(suflist);
+            suf = malloc(sizeof (struct suffix));
+            if (NULL == suf)
+            {
+                logmsg(LOG_ERR, "Couldn't allocate memory for new suffix.\n");
+                delitem(suflist, item);
+                return false;
+            }
+
+            item->data = suf;
+            suf->item = item;
+
+            (*storedsuf) ++;
+        }
+        
         PDEBUG("Copying data...\n");
             
         memcpy(suf->name, name, namelen);
@@ -1507,7 +1585,7 @@ static bool addresolver(struct item **reslist, int *storedres, uint32_t ttl,
 
 /*
  * Delete any expired DNS resolvers in list reslist with storedres
- * number of resolvers. Returns
+ * number of resolvers. Returns need to rewrite.
  */ 
 static bool expireresolv(struct item **reslist, int *storedres)
 {
@@ -1740,8 +1818,9 @@ int main(int argc, char **argv)
     struct sigaction sigact;    /* Signal handler. */
     struct stat sb;             /* For stat() */
     struct item *reslist = NULL; /* List of resolver addresses. */
-    struct item *suflist = NULL; /* List of domain suffixes. */    
     int storedres = 0;           /* Number of addresses in list. */
+    struct item *suflist = NULL; /* List of domain suffixes. */        
+    int storedsuf = 0;           /* Number of suffixes in list. */    
     char ifname[IFNAMSIZ];       /* Name of local interface. */
         
     progname = argv[0];
@@ -1856,7 +1935,7 @@ int main(int argc, char **argv)
     }
 
     /* Initialize resolv file and make sure we can write to it early. */
-    if (0 != writeresolv(suflist, reslist))
+    if (0 != writeresolv(suflist, storedsuf, reslist))
     {
         logmsg(LOG_ERR, "Couldn't create resolv file %s. Exiting...\n",
                filename);
@@ -1941,7 +2020,8 @@ int main(int argc, char **argv)
         {
             if (-1 != sock && FD_ISSET(sock, &in))
             {
-                if (handle_icmp6(sock, &suflist, &reslist, &storedres, ifname))
+                if (handle_icmp6(sock, &suflist, &storedsuf, &reslist,
+                                 &storedres, ifname))
                 {
                     /* We got a new message and we need to rewrite. */
                     newresolv = true;
@@ -1954,16 +2034,21 @@ int main(int argc, char **argv)
         /* Check for expired DNS servers. */
         if (expireresolv(&reslist, &storedres))
         {
-            printf("Something expired.\n");
-
             /* Some resolvers expired. Maybe do something. */
             newresolv = true;
         }
 
+        /* Check for expired domain suffixes. */
+        if (expiresuffix(&suflist, &storedsuf))
+        {
+            /* Some suffixes expired. Maybe do something. */
+            newresolv = true;            
+        }
+        
         if (newresolv)
         {
             /* Write address(es) to file. */        
-            writeresolv(suflist, reslist);
+            writeresolv(suflist, storedsuf, reslist);
 
             /* Call external script, if any. */
             (void)exithook(filename, ifname);
@@ -1986,7 +2071,7 @@ int main(int argc, char **argv)
     /* Free all resolvers and suffixes. Write an empty resolv file. */
     delall(&reslist);
     delall(&suflist);
-    writeresolv(suflist, reslist);
+    writeresolv(suflist, storedsuf, reslist);
     
     exit(0);
 }
