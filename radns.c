@@ -167,7 +167,7 @@ struct suffix
     bool neverexp;
     struct item *item;          /* Pointer to our place in the list. */
 };
-    
+
 /* Recursive DNS Server (RDNSS) option in Router Advertisments. */
 struct nd_opt_rdnss
 {
@@ -179,7 +179,7 @@ struct nd_opt_rdnss
     uint32_t nd_opt_rdns_life; /* The maximum time in seconds to
                                   use this from the time it was
                                   sent. */
-} __packed;
+} __attribute__((__packed__));
 
 /* DNS Search List option in Router Advertisments. */
 struct nd_opt_dnssl
@@ -188,8 +188,8 @@ struct nd_opt_dnssl
     uint8_t nd_opt_len;
     uint16_t nd_opt_dnssl_res;
     uint32_t nd_opt_dnssl_life;
-} __packed;
-  
+} __attribute__((__packed__));
+
 static struct resolver *expirenext(struct item *reslist);
 static struct resolver *findresolv(struct in6_addr addr, struct item *reslist);
 static void deladdr(struct item **reslist, int *storedres,
