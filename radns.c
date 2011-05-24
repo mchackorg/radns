@@ -192,8 +192,6 @@ struct nd_opt_dnssl
   
 static struct resolver *expirenext(struct item *reslist);
 static struct resolver *findresolv(struct in6_addr addr, struct item *reslist);
-static void delresolver(struct item **reslist, int *storedres,
-                        struct resolver *res);
 static void deladdr(struct item **reslist, int *storedres,
                     struct in6_addr addr);
 static void delall(struct item **list);
@@ -211,8 +209,6 @@ static bool addresolver(struct item **reslist, int *storedres, uint32_t ttl,
 static void listres(struct item *reslist);
 static bool addsuffix(struct item **suflist, int *storedsuf, uint32_t ttl,
                       char *name, int namelen, char *ifname);
-static void delsuffix(struct item **suflist, int *storedsuf,
-                      struct suffix *suf);
 static struct suffix *sufexpirenext(struct item *suflist);
 static bool expiresuffix(struct item **suflist, int *storedsuf);
 static struct suffix *findsuffix(char *name, int namelen, struct item *suflist);
@@ -271,17 +267,6 @@ static struct resolver *findresolv(struct in6_addr addr, struct item *reslist)
 /*
  * Delete the resolver res in list reslist.
  */
-static void delresolver(struct item **reslist, int *storedres,
-                        struct resolver *res)
-{
-    struct item *item;
-
-    item = res->item;
-    free(item->data);
-    delitem(reslist, item);
-
-    (*storedres) --;
-}
 
 /*
  * Delete the resolver with address addr in list reslist.
@@ -296,7 +281,7 @@ static void deladdr(struct item **reslist, int *storedres, struct in6_addr addr)
     }
     else
     {
-        delresolver(reslist, storedres, res);
+        freeitem(reslist, storedres, res->item);
     }
 }
 
@@ -1247,7 +1232,7 @@ static bool expiresuffix(struct item **suflist, int *storedsuf)
         {
             expired = true;
 
-            delsuffix(suflist, storedsuf, suf);
+            freeitem(suflist, storedsuf, suf->item);
 
             if (verbose > 1)
             {
@@ -1257,20 +1242,6 @@ static bool expiresuffix(struct item **suflist, int *storedsuf)
     } /* for */
 
     return expired;    
-}
-
-/*
- * Delete the suffix suf in list suflist.
- */
-static void delsuffix(struct item **suflist, int *storedsuf, struct suffix *suf)
-{
-    struct item *item;
-
-    item = suf->item;
-    free(item->data);
-    delitem(suflist, item);
-
-    (*storedsuf) --;    
 }
 
 /*
@@ -1321,8 +1292,7 @@ static bool addsuffix(struct item **suflist, int *storedsuf, uint32_t ttl,
                 printf("We have been asked to remove it, so we do.\n");
             }
 
-            delsuffix(suflist, storedsuf, suf);
-
+            freeitem(suflist, storedsuf, suf->item);
             return true;
         }
         else
@@ -1482,7 +1452,7 @@ static bool addresolver(struct item **reslist, int *storedres, uint32_t ttl,
                 printf("We have been asked to remove it, so we do.\n");
             }
 
-            delresolver(reslist, storedres, res);
+            freeitem(reslist, storedres, res->item);
 
             return true;
         }
@@ -1612,7 +1582,7 @@ static bool expireresolv(struct item **reslist, int *storedres)
         {
             expired = true;
 
-            delresolver(reslist, storedres, res);
+            freeitem(reslist, storedres, res->item);
             
             if (verbose > 1)
             {
@@ -1701,18 +1671,24 @@ int main(void)
     struct item *reslist = NULL; /* Linked list of resolvers. */
     struct item *suflist = NULL; /* Linked list of domain suffixes. */
     int storedres = 0;
+    int storedsuf = 0;
     struct in6_addr addr;
     bool rewrite;
-
+    struct suffix *suf;
+    
     printf("Suffixes (should be none)\n");
     listsuf(suflist);
 
     printf("Adding hack.org.\n");
-    rewrite = addsuffix(&suflist, 30, "hack.org.", 9, "em0");
+    rewrite = addsuffix(&suflist, &storedsuf, 30, "hack.org.", 9, "em0");
     printrewrite(rewrite);
     listsuf(suflist);
 
-    delall(&suflist);
+    suf = sufexpirenext(suflist);
+    
+    printf("Deleting suffix.\n");
+    freeitem(&suflist, &storedsuf, suf->item);
+    listsuf(suflist);
     
     printf("Resolvers (should be none):\n");
     listres(reslist);
