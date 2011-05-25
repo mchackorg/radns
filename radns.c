@@ -428,7 +428,8 @@ static bool rdnss(const struct nd_opt_rdnss *rdnssp, int optlen,
     }
                 
     /* Find the addresses and store them. */
-    for (i = 0; i < nr_of_addrs; i ++)
+    for (i = 0; i < nr_of_addrs
+             && (unsigned)lenleft > sizeof (struct in6_addr); i ++)
     {
         addrp = (struct in6_addr *)datap;
             
