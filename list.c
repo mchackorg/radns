@@ -100,9 +100,15 @@ void delitem(struct item **mainlist, struct item *item)
 void freeitem(struct item **list, int *stored,
                      struct item *item)
 {
+    if (NULL == list || NULL == *list || NULL == item)
+    {
+        return;
+    }
+    
     if (NULL != item->data)
     {
         free(item->data);
+        item->data = NULL;
     }
 
     delitem(list, item);
