@@ -583,10 +583,13 @@ static bool dnssl(const struct nd_opt_dnssl *dnsslp, int optlen,
         datap += domlen + 1;
         lenleft -= domlen + 1;
         optlenleft -= domlen + 1;
-        
-        printf("Got domain suffix:\n");
-        hexdump((uint8_t *)domain, domlen);
 
+        if (verbose > 0)
+        {
+            printf("Got domain suffix:\n");
+            hexdump((uint8_t *)domain, domlen);
+        }
+        
         rewrite = addsuffix(suflist, storedsuf,
                             ntohl(dnsslp->nd_opt_dnssl_life), domain, domlen,
                             ifname);
