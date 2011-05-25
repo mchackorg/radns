@@ -631,7 +631,6 @@ static bool handle_icmp6(int sock, struct item **suflist, int *storedsuf,
         };                      /* Incoming message. */
     struct in6_pktinfo *pktinfo = NULL; /* Metadata about the packet. */
     struct cmsghdr *cmsgp;       /* Pointer to ancillary data. */
-    struct timespec now;         /*  Time we received this packet. */
     bool rewrite = false;
     
     if (-1 == (buflen = recvmsg(sock, &msg, 0)))
@@ -645,14 +644,7 @@ static bool handle_icmp6(int sock, struct item **suflist, int *storedsuf,
         logmsg(LOG_ERR, "truncated message\n");
         return rewrite;
     }
-
-    /* Record when we received this packet. */
-    if (-1 == clock_gettime(CLOCK_MONOTONIC, &now))
-    {
-        logmsg(LOG_ERR, "Couldn't get current time. Can't set arrival time.\n");
-        now.tv_sec = 0;
-    }
-
+    
     /* Find our packet information (asked for by the IP6_RECVPKTINFO). */
     for (cmsgp = CMSG_FIRSTHDR(&msg); cmsgp != NULL;
          cmsgp = CMSG_NXTHDR(&msg, cmsgp))
@@ -682,7 +674,8 @@ static bool handle_icmp6(int sock, struct item **suflist, int *storedsuf,
     }
     else
     {
-        strcpy(ifname, "");
+        logmsg(LOG_ERR, "couldn't get ancillary data for packet.");
+        strncpy(ifname, "<none>", IFNAMSIZ);
     }
 
     if (verbose > 0)
