@@ -671,12 +671,19 @@ static bool handle_icmp6(int sock, struct item **suflist, int *storedsuf,
         }
     }
 
-    /* Convert it to an interface name. */
-    if (NULL == if_indextoname(pktinfo->ipi6_ifindex, ifname))
+    if (NULL != pktinfo)
     {
-        logmsg(LOG_ERR, "couldn't find interface name: index %d\n",
-               pktinfo->ipi6_ifindex);
-        strncpy(ifname, "<none>", IFNAMSIZ);
+        /* Convert it to an interface name. */
+        if (NULL == if_indextoname(pktinfo->ipi6_ifindex, ifname))
+        {
+            logmsg(LOG_ERR, "couldn't find interface name: index %d\n",
+                   pktinfo->ipi6_ifindex);
+            strncpy(ifname, "<none>", IFNAMSIZ);
+        }
+    }
+    else
+    {
+        strcpy(ifname, "");
     }
 
     if (verbose > 0)
@@ -689,7 +696,7 @@ static bool handle_icmp6(int sock, struct item **suflist, int *storedsuf,
             logmsg(LOG_ERR, "Couldn't convert IPv6 address to string\n");
             return rewrite;
         }
-        
+
         printf("Received an IPv6 Router Advertisement from %s on interface "
                "%s\n", srcaddrstr, ifname);
 
