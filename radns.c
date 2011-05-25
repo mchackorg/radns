@@ -152,7 +152,6 @@ struct resolver
 {
     struct in6_addr addr;       /* Address to DNS server. */
     char ifname[IFNAMSIZ];      /* Interface name we received this data on. */
-    time_t arrived;             /* Arrival time of packet. */
     time_t expire;              /* Expire time of this data. */
     bool neverexp;
     struct item *item;          /* Pointer to our place in the list. */
@@ -941,19 +940,19 @@ static int exithook(char *filename, char *ifname)
         argv[0] = scriptname;
         argv[1] = NULL;
 
-        if (NULL == (env[0] = calloc(sizeof (char), strlen(ifname))))
+        if (NULL == (env[0] = calloc(sizeof (char), 3 + 1 + strlen(ifname))))
         {
             logmsg(LOG_ERR, "out of memory.\n");
             exit(1);
         }
-        snprintf(env[0], 3 + strlen(ifname) + 1, "if=%s", ifname);
+        snprintf(env[0], 3 + 1 + strlen(ifname), "if=%s", ifname);
         
-        if (NULL == (env[1] = calloc(sizeof (char), 13 + strlen(filename))))
+        if (NULL == (env[1] = calloc(sizeof (char), 12 + 1 + strlen(filename))))
         {
             logmsg(LOG_ERR, "out of memory.\n");
             exit(1);
         }
-        snprintf(env[1], 13 + strlen(filename) + 1, "resolv_conf=%s", filename);
+        snprintf(env[1], 12 + 1 + strlen(filename), "resolv_conf=%s", filename);
 
         env[2] = NULL;
         
