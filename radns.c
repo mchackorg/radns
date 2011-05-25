@@ -195,6 +195,7 @@ static struct resolver *findresolv(struct in6_addr addr, struct item *reslist);
 static void deladdr(struct item **reslist, int *storedres,
                     struct in6_addr addr);
 static void printrewrite(bool rewrite);
+static int dnsname(char *domain, uint8_t *name, int buflen);
 static void hexdump(uint8_t *buf, uint16_t len);
 static void printhelp(void);
 void sigcatch(int sig);
@@ -456,10 +457,10 @@ bool rdnss(const struct nd_opt_rdnss *rdnssp, int optlen,
  *   (i.e., label octets and label length octets) is restricted to 255
  *   octets or less.
  */
-int dnsname(char *domain, uint8_t *name)
+static int dnsname(char *domain, uint8_t *name, int buflen)
 {
     uint8_t len;                /* Length of label. */
-    uint8_t left = MAXNAME;     /* Number of octets left free in domain. */
+    uint8_t domleft = MAXNAME; /* Number of octets left free in domain. */
     int strlen;                 /* Length of domain string. */
     uint8_t *bytep;             /* Octet pointer used to walk the name. */
 
@@ -467,22 +468,27 @@ int dnsname(char *domain, uint8_t *name)
 
     /*
      * Walk through each label and copy each label to the domain
-     * string adding "." between them. When we find a zero length
-     * we're done.
+     * string adding "." between them. When we run out of buffer
+     * (pathological) or find a zero length (fine) we're done.
      */
-    for (bytep = name; (uint8_t) *bytep != 0; )
+    for (bytep = name; buflen > 0 && (uint8_t) *bytep != 0; )
     {
         len = *bytep;
         bytep ++;
-        left --;
+        domleft --;
         
-        if (left > len)
+        if (domleft > len && len <= (uint8_t)buflen)
         {
-            memcpy(&domain[strlen], bytep, len);
-            bytep += (len);
-            left -= (len);
+            if (len != 0)
+            {
+                memcpy(&domain[strlen], bytep, len);
+                bytep += len;
+                domleft -= len;
+                buflen -= len;
+            
+                strlen += len;
+            }
 
-            strlen += len;
             domain[strlen] = '.';
             strlen ++;
         }
@@ -558,11 +564,7 @@ bool dnssl(const struct nd_opt_dnssl *dnsslp, int optlen,
 
     while (optlenleft > 0 && lenleft > 0)
     {
-        printf("optlenleft: %d\n", optlenleft);
-        /*
-         * FIXME: Separate all names and add them to the suflist.
-         */
-        domlen = dnsname(domain, datap);
+        domlen = dnsname(domain, datap, optlenleft);
         if (0 == domlen)
         {
             break;
@@ -1658,7 +1660,21 @@ int main(void)
     struct in6_addr addr;
     bool rewrite;
     struct suffix *suf;
+
+        char domain[MAXNAME];
+    int domainlen;
     
+    domainlen = dnsname(domain, (uint8_t *)"\007example\003com\000", 13);
+
+    printf("Domain length %d\n", domainlen);
+    hexdump((uint8_t *)domain, domainlen);
+
+    domainlen = dnsname(domain, (uint8_t *)"\007example\003com\000foobar",
+                        13 + 6);
+
+    printf("Domain length %d\n", domainlen);
+    hexdump((uint8_t *)domain, domainlen);
+
     printf("Suffixes (should be none)\n");
     listsuf(suflist);
 
