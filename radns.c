@@ -195,6 +195,15 @@ static struct resolver *findresolv(struct in6_addr addr, struct item *reslist);
 static void deladdr(struct item **reslist, int *storedres,
                     struct in6_addr addr);
 static void printrewrite(bool rewrite);
+static void listsuf(struct item *suflist);
+static void listres(struct item *reslist);
+static void printrewrite(bool rewrite);
+static bool rdnss(const struct nd_opt_rdnss *rdnssp, int optlen, 
+           int lenleft, struct item **reslist, int *storedres,
+           char ifname[IFNAMSIZ]);
+static bool dnssl(const struct nd_opt_dnssl *dnsslp, int optlen, 
+           int lenleft, struct item **suflist, int *storedsuf,
+           char ifname[IFNAMSIZ]);
 static int dnsname(char *domain, uint8_t *name, int buflen);
 static void hexdump(uint8_t *buf, uint16_t len);
 static void printhelp(void);
@@ -212,8 +221,9 @@ static bool addsuffix(struct item **suflist, int *storedsuf, uint32_t ttl,
 static struct suffix *sufexpirenext(struct item *suflist);
 static bool expiresuffix(struct item **suflist, int *storedsuf);
 static struct suffix *findsuffix(char *name, int namelen, struct item *suflist);
-bool handle_icmp6(int sock, struct item **suflist, int *storedsuf,
-                  struct item **reslist, int *storedres, char ifname[IFNAMSIZ]);
+static bool handle_icmp6(int sock, struct item **suflist, int *storedsuf,
+                         struct item **reslist, int *storedres,
+                         char ifname[IFNAMSIZ]);
 static int mkpidfile(uid_t owner, gid_t group);
 
 /*
@@ -357,9 +367,9 @@ static void printrewrite(bool rewrite)
 }
 
 
-bool rdnss(const struct nd_opt_rdnss *rdnssp, int optlen, 
-           int lenleft, struct item **reslist, int *storedres,
-           char ifname[IFNAMSIZ])
+static bool rdnss(const struct nd_opt_rdnss *rdnssp, int optlen, 
+                  int lenleft, struct item **reslist, int *storedres,
+                  char ifname[IFNAMSIZ])
 {
     int nr_of_addrs;
     int i;
@@ -497,9 +507,9 @@ static int dnsname(char *domain, uint8_t *name, int buflen)
     return strlen;
 }
 
-bool dnssl(const struct nd_opt_dnssl *dnsslp, int optlen, 
-           int lenleft, struct item **suflist, int *storedsuf,
-           char ifname[IFNAMSIZ])
+static bool dnssl(const struct nd_opt_dnssl *dnsslp, int optlen, 
+                  int lenleft, struct item **suflist, int *storedsuf,
+                  char ifname[IFNAMSIZ])
 {
     uint8_t *datap;            /* An octet pointer we use for running
                                  * through data in rdnssp. */
@@ -591,8 +601,9 @@ bool dnssl(const struct nd_opt_dnssl *dnsslp, int optlen,
  * Returns true if we need to rewrite the resolv file and false
  * otherwise.
  */ 
-bool handle_icmp6(int sock, struct item **suflist, int *storedsuf,
-                  struct item **reslist, int *storedres, char ifname[IFNAMSIZ])
+static bool handle_icmp6(int sock, struct item **suflist, int *storedsuf,
+                         struct item **reslist, int *storedres,
+                         char ifname[IFNAMSIZ])
 {
     uint8_t buf[PACKETSIZE];   /* The entire ICMP6 message. */
     int buflen;                 /* The lenght of the ICMP6 buffer. */
