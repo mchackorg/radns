@@ -1,4 +1,4 @@
-.TH radns 8 "May 19, 2011" "" ""
+.TH radns 8 "May 26, 2011" "" ""
 .SH NAME
 radns \- Resolving DNS Server Client for IPv6.
 .SH SYNOPSIS
@@ -7,6 +7,7 @@ radns \- Resolving DNS Server Client for IPv6.
 [ \fB\-v\fP ] 
 [ \fB\-v\fP ] ] 
 [ \fB\-f\fP \fIpath to resolv file\fP ]
+[ \fB\-l\fP \fImaximum number of domain suffixes in search list\fP ]
 [ \fB\-m\fP \fImaximum number of resolver addresses\fP ]
 [ \fB\-u\fP \fIuser\fP ]
 [ \fB\-s\fP \fIpath to script\fP ]
@@ -40,6 +41,11 @@ writable by the radns user.
 If radns is run on an IPv6-only machine, with no dual-stack, you may
 want to make /etc/resolv.conf a symbolic link to
 /etc/radns/ra-resolv.conf.
+.TP
+\-m \fImaximum number of domain suffixes in search list\fP specifies
+the number of domain suffixes to store after the search keyword in the
+resolv.conf file. 0 is a special case meaning an unlimited number. The
+default is 6.
 .TP
 \-m \fImaximum number of resolver addresses\fP
 specifies the number of resolver addresses to store in the resolv.conf
