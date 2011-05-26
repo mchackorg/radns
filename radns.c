@@ -1133,22 +1133,26 @@ static void hexdump(uint8_t *buf, uint16_t len)
 /* Prints a helpful message. */
 static void printhelp(void)
 {
-    fprintf(stderr, "Usage: %s [-v [-v] [-v]] [-f filename] [-m max resolvers] "
-            "[-u user] [-s script] [-p pidfile ]\n", progname);
+    fprintf(stderr, "Usage: %s [-v [-v] [-v]] [-f filename] [-l max suffixes ]"
+            "\n[-m max resolvers] [-u user] [-s script] [-p pidfile ]\n",
+            progname);
 
-    fprintf(stderr, "-f filename gives the filename the DNS resolving address "
-            "is written to. Default is ./resolv.conf.\n");
-    fprintf(stderr, "-m number-of-resolvers sets an upper limit of how many "
-            "resolver addresses to store. 0 means no upper limit.\n");
-    fprintf(stderr, "-u user sets username to drop privileges to. "
+    fprintf(stderr, "\n\n-f filename gives the filename the DNS resolving "
+            "address is written to.\n Default is ./resolv.conf.\n");
+    fprintf(stderr, "\n\n-l number-of-domain-suffixes sets an upper limit of "
+            "how many domain suffixes\n to store in search list. 0 means no "
+            "upper limit.\n");    
+    fprintf(stderr, "\n\n-m number-of-resolvers sets an upper limit of how "
+            "many resolver addresses\n to store. 0 means no upper limit.\n");
+    fprintf(stderr, "\n\n-u user sets username to drop privileges to. "
             "Default is 'radns'.\n");
-    fprintf(stderr, "-s script executes 'script' after receiving a Router "
-            "Advertisment.\n");
-    fprintf(stderr, "-p pidfile writes the process ID to 'pidfile'. By default "
-            "it writes the process ID to %s.\n", PIDFILE);
+    fprintf(stderr, "\n\n-s script executes 'script' after changing resolv "
+            "file.\n");
+    fprintf(stderr, "\n\n-p pidfile writes the process ID to 'pidfile'. "
+            "By default it writes\n the process ID to %s.\n", PIDFILE);
 
-    fprintf(stderr, "Repeating -v means more verbosity.\n");
-    fprintf(stderr, "Use -V to get version information.\n");
+    fprintf(stderr, "\n\n-v means more verbosity. Repeat for more.\n");
+    fprintf(stderr, "\n\n-V to get version information.\n");
 }
 
 /* Signal handler for SIGCHLD. */
@@ -1830,7 +1834,7 @@ int main(int argc, char **argv)
 
     while (1)
     {
-        ch = getopt(argc, argv, "f:m:s:p:u:vV");
+        ch = getopt(argc, argv, "f:l:m:s:p:u:vV");
         if (-1 == ch)
         {
             /* No more options, break out of while loop. */
@@ -1841,6 +1845,9 @@ int main(int argc, char **argv)
         {
         case 'f':
             filename = optarg;
+            break;
+        case 'l':
+            maxsuf = atoi(optarg);
             break;
         case 'm':
             maxres = atoi(optarg);
