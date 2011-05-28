@@ -2025,8 +2025,6 @@ int main(int argc, char **argv)
             } /* sock */
         } /* if found */
 
-        /* FIXME: Check for expired suffixes. */
-        
         /* Check for expired DNS servers. */
         if (expireresolv(&reslist, &storedres))
         {
