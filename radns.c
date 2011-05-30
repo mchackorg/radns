@@ -1359,6 +1359,12 @@ static bool addsuffix(struct item **suflist, int *storedsuf, uint32_t ttl,
             }
 
             item = additem(suflist);
+            if (NULL == item)
+            {
+                logmsg(LOG_ERR, "Couldn't allocate memory for new suffix.\n");
+                return false;
+            }
+            
             suf = malloc(sizeof (struct suffix));
             if (NULL == suf)
             {
@@ -1522,6 +1528,12 @@ static bool addresolver(struct item **reslist, int *storedres, uint32_t ttl,
             }
 
             item = additem(reslist);
+            if (NULL == item)
+            {
+                logmsg(LOG_ERR, "Couldn't allocate memory for new resolver.\n");
+                return false;
+            }
+            
             res = malloc(sizeof (struct resolver));
             if (NULL == res)
             {
