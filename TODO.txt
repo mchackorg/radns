@@ -1,10 +1,16 @@
-- Support DNS Search List Option.
+- Is our use of an explicit end "." in domain suffixes OK? Find out.
+
+- Also call script if new prefix is announced?
+
+  This way we might, for instance, update our AAAA record if we get a
+  new IPv6 address.
 
 - Create a FreeBSD port.
 
 - Create a Debian package.
 
-- How to deal with several RDNSS options in same RA? Is it allowed?
+- How to deal with several RDNSS and DNSSL options in same RA? Is it
+  allowed?
 
 - Use logmsg() everywhere. Eliminate printf().
 
