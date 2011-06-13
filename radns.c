@@ -72,15 +72,7 @@
 
 #include "list.h"
 
-/* #define DEBUG 1 */
 /* #define TEST 1 */
-
-#if DEBUG
-#define PDEBUG(Args...) \
-  do { fprintf(stderr, "radns: "); fprintf(stderr, ##Args); } while(0)
-#else
-#define PDEBUG(Args...)
-#endif
 
 #define RESOLVEFILE "./resolv.conf"
 
@@ -191,12 +183,6 @@ struct nd_opt_dnssl
 
 static struct resolver *expirenext(struct item *reslist);
 static struct resolver *findresolv(struct in6_addr addr, struct item *reslist);
-static void deladdr(struct item **reslist, int *storedres,
-                    struct in6_addr addr);
-static void printrewrite(bool rewrite);
-static void listsuf(struct item *suflist);
-static void listres(struct item *reslist);
-static void printrewrite(bool rewrite);
 static bool rdnss(const struct nd_opt_rdnss *rdnssp, int optlen, 
            int lenleft, struct item **reslist, int *storedres,
            char ifname[IFNAMSIZ]);
@@ -214,7 +200,6 @@ static void logmsg(int pri, const char *message, ...);
 static bool expireresolv(struct item **reslist, int *storedres);
 static bool addresolver(struct item **reslist, int *storedres, uint32_t ttl,
                         struct in6_addr addr, char *ifname);
-static void listres(struct item *reslist);
 static bool addsuffix(struct item **suflist, int *storedsuf, uint32_t ttl,
                       char *name, int namelen, char *ifname);
 static struct suffix *sufexpirenext(struct item *suflist);
@@ -224,6 +209,15 @@ static bool handle_icmp6(int sock, struct item **suflist, int *storedsuf,
                          struct item **reslist, int *storedres,
                          char ifname[IFNAMSIZ]);
 static int mkpidfile(uid_t owner, gid_t group);
+
+#ifdef TEST
+static void deladdr(struct item **reslist, int *storedres,
+                    struct in6_addr addr);
+static void printrewrite(bool rewrite);
+static void listsuf(struct item *suflist);
+static void listres(struct item *reslist);
+static void printrewrite(bool rewrite);
+#endif
 
 /*
  * Find resolver in list reslist that will expire next. Returns a
@@ -272,99 +266,6 @@ static struct resolver *findresolv(struct in6_addr addr, struct item *reslist)
 
     return NULL;
 }
-
-/*
- * Delete the resolver res in list reslist.
- */
-
-/*
- * Delete the resolver with address addr in list reslist.
- */ 
-static void deladdr(struct item **reslist, int *storedres, struct in6_addr addr)
-{
-    struct resolver *res;
-    
-    res = findresolv(addr, *reslist);
-    if (NULL == res)
-    {
-    }
-    else
-    {
-        freeitem(reslist, storedres, res->item);
-    }
-}
-
-/*
- * Print a list of all domain suffixes in suflist to stdout.
- */
-static void listsuf(struct item *suflist)
-{
-    struct item *item;
-    struct suffix *suf;
-    int i;
-
-    for (item = suflist, i = 1; item != NULL; item = item->next, i ++)
-    {
-        suf = item->data;
-
-        printf("%i: received on if %s, expires at %d\n", i, 
-               suf->ifname, (int)suf->expire);
-
-        write(1, suf->name, suf->len);
-        putchar('\n');
-    }
-}
-
-
-/*
- * Print a list of all resolvers in reslist to stdout.
- */
-static void listres(struct item *reslist)
-{
-    struct item *item;
-    struct resolver *res;
-    int i;
-    char addrstr[INET6_ADDRSTRLEN];
-    
-    for (item = reslist, i = 1; item != NULL; item = item->next, i ++)
-    {
-        res = item->data;
-        if (0 == res->expire)
-        {
-            printf("%i:  empty.\n", i);
-        }
-        else
-        {
-            if (NULL == inet_ntop(AF_INET6, &res->addr,
-                                  addrstr, INET6_ADDRSTRLEN))
-            {
-                logmsg(LOG_ERR, "Couldn't convert IPv6 address to "
-                       "string\n");
-            }
-            else
-            {
-                printf("%i:  %s, if %s, expire at %d\n", i, addrstr,
-                       res->ifname, (int)res->expire);
-            }
-        }
-    }
-}
-
-/*
- * Print on stdout if we need to rewrite or not.
- */ 
-static void printrewrite(bool rewrite)
-{
-    if (rewrite)
-    {
-        printf("Rewrite.\n");
-    }
-    else
-    {
-        printf("No rewrite.\n");
-    }
-}
-
 
 static bool rdnss(const struct nd_opt_rdnss *rdnssp, int optlen, 
                   int lenleft, struct item **reslist, int *storedres,
@@ -1379,21 +1280,25 @@ static bool addsuffix(struct item **suflist, int *storedsuf, uint32_t ttl,
             (*storedsuf) ++;
         }
         
-        PDEBUG("Copying data...\n");
-            
         memcpy(suf->name, name, namelen);
         suf->len = namelen;
         strncpy(suf->ifname, ifname, IFNAMSIZ);
 
         if (NEVEREXP == ttl)
         {
-            PDEBUG("Never expire.\n");
+            if (verbose > 2)
+            {
+                printf("Never expire.\n");
+            }
             suf->neverexp = true;
         }
         else
         {
-            PDEBUG("New expire is now (%d) + ttl (%d) = %d\n", now.tv_sec, ttl,
-                   now.tv_sec + ttl);
+            if (verbose > 2)
+            {
+                printf("New expire is now (%d) + ttl (%d) = %d\n", now.tv_sec,
+                       ttl, now.tv_sec + ttl);
+            }
             suf->expire = now.tv_sec + ttl;
         }
         
@@ -1547,20 +1452,24 @@ static bool addresolver(struct item **reslist, int *storedres, uint32_t ttl,
             (*storedres) ++;
         }
 
-        PDEBUG("Copying data...\n");
-            
         memcpy(&res->addr, &addr, sizeof (struct in6_addr));
         strncpy(res->ifname, ifname, IFNAMSIZ);
 
         if (NEVEREXP == ttl)
         {
-            PDEBUG("Never expire.\n");
+            if (verbose > 2)
+            {
+                printf("Never expire.\n");
+            }
             res->neverexp = true;
         }
         else
         {
-            PDEBUG("New expire is now (%d) + ttl (%d) = %d\n", now.tv_sec, ttl,
-                   now.tv_sec + ttl);
+            if (verbose > 2)
+            {
+                printf("New expire is now (%d) + ttl (%d) = %d\n", now.tv_sec,
+                       ttl, now.tv_sec + ttl);
+            }
             res->expire = now.tv_sec + ttl;
         }
         
@@ -1677,6 +1586,97 @@ end:
     return rc;
 }
 
+#ifdef TEST
+/*
+ * Delete the resolver with address addr in list reslist.
+ */ 
+static void deladdr(struct item **reslist, int *storedres, struct in6_addr addr)
+{
+    struct resolver *res;
+    
+    res = findresolv(addr, *reslist);
+    if (NULL == res)
+    {
+    }
+    else
+    {
+        freeitem(reslist, storedres, res->item);
+    }
+}
+
+/*
+ * Print a list of all domain suffixes in suflist to stdout.
+ */
+static void listsuf(struct item *suflist)
+{
+    struct item *item;
+    struct suffix *suf;
+    int i;
+
+    for (item = suflist, i = 1; item != NULL; item = item->next, i ++)
+    {
+        suf = item->data;
+
+        printf("%i: received on if %s, expires at %d\n", i, 
+               suf->ifname, (int)suf->expire);
+
+        write(1, suf->name, suf->len);
+        putchar('\n');
+    }
+}
+
+
+/*
+ * Print a list of all resolvers in reslist to stdout.
+ */
+static void listres(struct item *reslist)
+{
+    struct item *item;
+    struct resolver *res;
+    int i;
+    char addrstr[INET6_ADDRSTRLEN];
+    
+    for (item = reslist, i = 1; item != NULL; item = item->next, i ++)
+    {
+        res = item->data;
+        if (0 == res->expire)
+        {
+            printf("%i:  empty.\n", i);
+        }
+        else
+        {
+            if (NULL == inet_ntop(AF_INET6, &res->addr,
+                                  addrstr, INET6_ADDRSTRLEN))
+            {
+                logmsg(LOG_ERR, "Couldn't convert IPv6 address to "
+                       "string\n");
+            }
+            else
+            {
+                printf("%i:  %s, if %s, expire at %d\n", i, addrstr,
+                       res->ifname, (int)res->expire);
+            }
+        }
+    }
+}
+
+/*
+ * Print on stdout if we need to rewrite or not.
+ */ 
+static void printrewrite(bool rewrite)
+{
+    if (rewrite)
+    {
+        printf("Rewrite.\n");
+    }
+    else
+    {
+        printf("No rewrite.\n");
+    }
+}
+
+#endif
+
 /************************************************************************/
 /* Test main                                                            */
 /************************************************************************/
@@ -1763,7 +1763,7 @@ int main(void)
         logmsg(LOG_ERR, "Couldn't convert IPv6 address to string\n");
         exit(1);
     }
-    PDEBUG("Deleting ::1.\n");
+    printf("Deleting ::1.\n");
     deladdr(&reslist, &storedres, addr);
     
     /* Add a new resolver. */
