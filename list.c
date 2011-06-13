@@ -26,11 +26,8 @@
 #include "list.h"
 
 #ifdef DEBUG
-#define PDEBUG(Args...) \
-  do { fprintf(stderr, "radns: "); fprintf(stderr, ##Args); } while(0)
 #define D(x) x
 #else
-#define PDEBUG(Args...)
 #define D(x)
 #endif
 
