@@ -42,7 +42,7 @@ If radns is run on an IPv6-only machine, with no dual-stack, you may
 want to make /etc/resolv.conf a symbolic link to
 /etc/radns/ra-resolv.conf.
 .TP
-\-m \fImaximum number of domain suffixes in search list\fP specifies
+\-l \fImaximum number of domain suffixes in search list\fP specifies
 the number of domain suffixes to store after the search keyword in the
 resolv.conf file. 0 is a special case meaning an unlimited number. The
 default is 6.
