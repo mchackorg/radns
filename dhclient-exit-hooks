@@ -4,7 +4,7 @@
 # new information.
 
 # The directory and file radns writes to.
-radns_dir="/etc/radns"
+radns_dir="/usr/local/etc/radns"
 radns_resolv="${radns_dir}/radns-resolv.conf"
 
 # The real resolv.conf.
