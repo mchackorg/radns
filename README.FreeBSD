@@ -5,14 +5,17 @@ To use radns in FreeBSD, edit /etc/rc.conf and add:
   radns_enable="YES"
 
 Unless you installed radns through a port, copy the radns.sh start
-script from the tarball to /usr/local/etc/rc.d/radns.
+script from the tarball to /usr/local/etc/rc.d/radns. 
+
+Check out that script for more configuration options.
 
 Start radns as root by typing:
 
  # /usr/local/etc/rc.d/radns start
 
 At the next reboot, radns will start automatically. The resulting
-resolv file will be /usr/local/etc/radns/radns-resolv.conf.
+resolv file will be /usr/local/etc/radns/radns-resolv.conf if you
+installed by port. Set specifically if you installed from the tarball!
 
 Look in the radns.sh script for more variables to set in rc.conf.
 
