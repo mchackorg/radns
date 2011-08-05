@@ -1,4 +1,4 @@
-VERSION=20110805-6
+VERSION=20110805-7
 DIST=radns-$(VERSION)
 DISTFILES=LICENSE Makefile NEWS README README.FreeBSD TODO.txt radns.c list.c list.h \
 	radns.man dhclient-exit-hooks dhclient-exit-hooks.resolvconf radns-script radns.sh
