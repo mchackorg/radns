@@ -5,127 +5,21 @@ Router Advertisement DNS (radns)
 radns listens for IPv6 Router Advertisements with the Recursive DNS
 Server (RDNSS) and the DNS Search List (DNSSL) options and stores the
 search list and address(es) in a file in the same syntax as
-resolv.conf(5). The default file name is ./resolv.conf, but it is
+resolv.conf(5). The default filename is ./resolv.conf, but it is
 configurable with -f <filename>.
 
-To use radns in FreeBSD, edit /etc/rc.conf and add:
+== Configuration & Integration ==
 
-  radns_enable="YES"
+Configuration and integration is a bit system dependent. Look at the
+file named after your system in this directory. For FreeBSD, read
+README.FreeBSD, et cetera.
 
-then copy the radns.sh start script in this directory to
-/usr/local/etc/rc.d/radns and start radns as root by typing:
-
- # /usr/local/etc/rc.d/radns start
-
-At the next reboot, radns will start automatically. The resulting
-resolv file will be /etc/radns/radns-resolv.conf.
-
-Look in the radns.sh script for more variables to set in rc.conf.
-
-If you want to start radns manually, a typical way to start radns from
-the command line would be this command as the root user:
-
-  # ./radns -f /etc/radns/ra-resolv.conf
-
-The program by default drops privileges to a user called radns. You
-can specify another user with -u <username>. The file
-/etc/radns/ra-resolv.conf and the directory /etc/radns must be
-writable by this user.
-
-If radns is run on an IPv6-only machine, that is with no dual-stack,
-you may want to make /etc/resolv.conf a symbolic link to
-/etc/radns/ra-resolv.conf.
-
-*Note* that some other programs also might want to modify
-/etc/resolv.conf. This will interfer with radns's operation if you
-make a symbolic link. See below on Dual Stack and DHCP.
-
-The program optionally calls another program, usually a shell script,
-to act on the information it receives. The script is called whenever
-radns has updated the resolv file. Specify the script with -s <path to
-script>.
+== Logs ==
 
 Logs will be sent through syslog to the LOG_DAEMON facility. If you
 want radns to run in the foreground and log to the terminal instead,
 add -v for "verbosity". For even more verbosity, including hex dumps
 of the received messages, repeat it, up to -v -v -v.
-
-== Router Software ==
-
-For radns to be at all useful, there must be a corresponding program
-on the IPv6 router. This program is responsible for sending out Router
-Advertisements. One such program is radvd:
-
-  http://www.litech.org/radvd/
-
-You need to configure radvd to send out the RDNSS and DNSSL options.
-Here's a complete configuration for testing purposes:
-
-interface em0
-{
-	AdvSendAdvert on;
-	prefix 2001:db8:1:0::/64 { };
-        RDNSS 2001:db8:1::1 { };
-        DNSSL example.com { };
-}
-
-Be sure to change "em0" to what your network interface is called, for
-instance "eth0" for the first NIC on a Linux host.
-
-You need to turn on IPv6 forwarding on your router, otherwise radvd
-won't start. On FreeBSD, this is done by setting
-
-  net.inet6.ip6.forwarding=1
-
-If you want this to survive reboots, set
-
-  ipv6_gateway_enable="YES"
-
-in rc.conf.
-
-== Dual Stack and DHCP ==
-
-If you're on a dual stack machine that also uses DHCP, chances are
-that the /etc/resolv.conf file will be written to by your DHCP client.
-
-If this is the case, there are a few things you can do:
-
-* Given that you're running ISC's dhclient, the default DHCP client in
-  FreeBSD:
-
-  1. Make sure the paths in the dhclient-exit-hooks script in this
-     directory matches the paths used in the radns.sh start script or
-     the values you have overridden in rc.conf.
-
-  2. Copy the dhclient-exit-hooks file to /etc/.
-
-  This will merge the information dhclient receives about a resolving
-  DNS server with what radns has received from router advertisments
-  into /etc/resolv.conf. Note, though, that this will only happen when
-  dhclient takes action, not when radns receives a Router
-  Advertisment.
-
-* If your DHCP client uses the resolvconf program which can be found
-  in many Linux distributions, but also as dns/openresolv in FreeBSD
-  ports you can follow these instructions. This instructions are valid
-  for FreeBSD, but it might be similar for Linux distributions.
-
-  1. Make sure resolvconf's directory (/usr/local/etc/resolvconf/ on
-     FreeBSD) is writable by the radns user, by default 'radns'.
-
-  2. If you only want to change the /etc/resolv.conf file, remove all
-     scripts except libc from /usr/local/etc/resolvconf/update.d/,
-     typically by moving them somewhere else.
-
-  2. Put the enclosed file 'radns-script' somewhere, for instance in
-     /usr/local/bin.
-
-  3. Edit /etc/rc.conf and add
-
-     radns_enable="YES"
-     radns_script="/usr/local/bin/radns-script"
-
-  4. Start radns with the provided radns.sh start script.
 
 == Development ==
 
@@ -135,7 +29,7 @@ The latest version can usually be found here:
 
 There is a git repository here:
 
-  http://hack.org/mc/git/radns/
+  git://hack.org/radns
 
 If you think the early history looks funny, it's because the releases
 (not every commit --- just the releases) were exported from Perforce

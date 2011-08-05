@@ -1,0 +1,105 @@
+-*- text -*-
+
+To use radns in FreeBSD, edit /etc/rc.conf and add:
+
+  radns_enable="YES"
+
+Unless you installed radns through a port, copy the radns.sh start
+script from the tarball to /usr/local/etc/rc.d/radns.
+
+Start radns as root by typing:
+
+ # /usr/local/etc/rc.d/radns start
+
+At the next reboot, radns will start automatically. The resulting
+resolv file will be /usr/local/etc/radns/radns-resolv.conf.
+
+Look in the radns.sh script for more variables to set in rc.conf.
+
+== resolv.conf ==
+
+If you're on a IPv6 only machine, make /etc/resolv.conf a symbolic
+link to /usr/local/etc/radns/radns-resolv.conf:
+
+  # ln -s /usr/local/etc/radns/radns-resolv.conf /etc/resolv.conf
+
+If you're on a dual stack machine you can merge the information from
+the system's DHCP client (dhclient) and from radns in at least two
+ways, one simple and one more complex:
+
+ - The Simple Way
+
+     Copy the example script in
+ 
+      /usr/local/etc/radns/dhclient-exit-hooks
+
+    to the /etc directory.
+
+    dhclient will now merge the data from radns into /etc/resolv.conf
+    whenever it receives new DHCP information.
+
+ - The Hard Way
+
+    Make both the DHCP client and radns use the resolvconf program.
+    This is already the case on some other systems, notably Debian
+    GNU/Linux.
+
+    Warning: This is not as tested as the simple way.
+
+    a) Install the dns/openresolv port which contains the resolvconf
+       program.
+
+    b) Copy the example script
+ 
+         /usr/local/etc/radns/dhclient-exit-hooks.resolvconf
+
+       to /etc/dhclient-exit-hooks.
+
+    c) Make sure resolvconf's directory (at least
+       /usr/local/etc/resolvconf/ and
+       /usr/local/etc/resolvconf/run/interfaces/, maybe more) are
+       writable by the radns user.
+
+    d) If you only want to change the /etc/resolv.conf file, remove
+       all scripts except libc from
+       /usr/local/etc/resolvconf/update.d/, typically by moving them
+       somewhere else.
+
+    e) Edit /etc/rc.conf and add
+
+        radns_enable="YES"
+        radns_script="/usr/local/etc/radns/radns-script"
+
+== Router Software ==
+
+For radns to be at all useful, there must be a corresponding program
+on the IPv6 router. This program is responsible for sending out Router
+Advertisements. The default rtadvd in base doesn't support RDNSS or
+DNSSL yet. One such program is net/radvd in ports, also available
+here:
+
+  http://www.litech.org/radvd/
+
+You need to configure radvd to send out the RDNSS and DNSSL options.
+Here's a complete configuration for testing purposes:
+
+interface em0
+{
+	AdvSendAdvert on;
+	prefix 2001:db8:1:0::/64 { };
+        RDNSS 2001:db8:1::1 { };
+        DNSSL example.com { };
+}
+
+Be sure to change "em0" to what your network interface is called.
+
+You need to turn on IPv6 forwarding on your router, otherwise radvd
+won't start. On FreeBSD, this is done by setting
+
+  net.inet6.ip6.forwarding=1
+
+If you want this to survive reboots, set
+
+  ipv6_gateway_enable="YES"
+
+in rc.conf.
