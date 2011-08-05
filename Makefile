@@ -1,6 +1,6 @@
-VERSION=20110805-2
+VERSION=20110805-5
 DIST=radns-$(VERSION)
-DISTFILES=LICENSE Makefile NEWS README TODO.txt radns.c list.c list.h \
+DISTFILES=LICENSE Makefile NEWS README README.FreeBSD TODO.txt radns.c list.c list.h \
 	radns.man dhclient-exit-hooks dhclient-exit-hooks.resolvconf radns-script radns.sh
 CFLAGS+=-Wall -Wextra -std=c99 -pedantic -g -DVERSION=\"$(VERSION)\" \
 	-D _GNU_SOURCE
