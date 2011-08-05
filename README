@@ -115,7 +115,7 @@ If this is the case, there are a few things you can do:
 
   2. If you only want to change the /etc/resolv.conf file, remove all
      scripts except libc from /usr/local/etc/resolvconf/update.d/,
-     typicall by moving them somewhere else.
+     typically by moving them somewhere else.
 
   2. Put the enclosed file 'radns-script' somewhere, for instance in
      /usr/local/bin.
