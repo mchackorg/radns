@@ -1,7 +1,7 @@
-VERSION=20110805
+VERSION=20110805-2
 DIST=radns-$(VERSION)
 DISTFILES=LICENSE Makefile NEWS README TODO.txt radns.c list.c list.h \
-	radns.man dhclient-exit-hooks radns-script radns.sh
+	radns.man dhclient-exit-hooks dhclient-exit-hooks.resolvconf radns-script radns.sh
 CFLAGS+=-Wall -Wextra -std=c99 -pedantic -g -DVERSION=\"$(VERSION)\" \
 	-D _GNU_SOURCE
 LDFLAGS+=
@@ -10,6 +10,7 @@ TARGETS=radns
 OBJS=radns.o list.o
 RM=/bin/rm
 PREFIX?=/usr/local
+ETCDIR=$(PREFIX)/etc/radns
 
 all: $(TARGETS)
 
@@ -21,10 +22,18 @@ list.o: list.c list.h Makefile
 install: $(TARGETS)
 	install -m 755 radns $(PREFIX)/bin
 	install -m 644 radns.man $(PREFIX)/man/man8/radns.8
+	install -o radns -g radns -d $(ETCDIR)
+	install -m 755 dhclient-exit-hooks $(ETCDIR)
+	install -m 755 dhclient-exit-hooks.resolvconf $(ETCDIR)
+	install -m 755 radns-script $(ETCDIR)
 
 deinstall:
 	$(RM) -f $(PREFIX)/bin/radns
 	$(RM) -f $(PREFIX)/man/man8/radns.8
+	$(RM) -f $(ETCDIR)/dhclient-exit-hooks
+	$(RM) -f $(ETCDIR)/dhclient-exit-hooks.resolvconf
+	$(RM) -f $(ETCDIR)/radns-script
+	rmdir $(ETCDIR)
 
 $(DIST).tar.bz2:
 	mkdir $(DIST)
