@@ -16,7 +16,7 @@ resolv file will be /usr/local/etc/radns/radns-resolv.conf.
 
 Look in the radns.sh script for more variables to set in rc.conf.
 
-== resolv.conf ==
+== Creating the system's resolv.conf ==
 
 If you're on a IPv6 only machine, make /etc/resolv.conf a symbolic
 link to /usr/local/etc/radns/radns-resolv.conf:
