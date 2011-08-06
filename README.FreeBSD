@@ -26,9 +26,11 @@ link to /usr/local/etc/radns/radns-resolv.conf:
 
   # ln -s /usr/local/etc/radns/radns-resolv.conf /etc/resolv.conf
 
-If you're on a dual stack machine you can merge the information from
-the system's DHCP client (dhclient) and from radns in at least two
-ways, one simple and one more complex:
+That's it.
+
+If you're on a dual stack machine things are more complicated. You can
+merge the information from the system's DHCP client (dhclient) and
+from radns in at least two ways, one simple and one more complex:
 
  - The Simple Way
 
@@ -47,26 +49,60 @@ ways, one simple and one more complex:
     This is already the case on some other systems, notably Debian
     GNU/Linux.
 
-    Warning: This is not as tested as the simple way.
+    Warning: This is not quite working on FreeBSD yet, but this text
+    is provided as a start.
 
     a) Install the dns/openresolv port which contains the resolvconf
        program.
 
-    b) Copy the example script
- 
-         /usr/local/etc/radns/dhclient-exit-hooks.resolvconf
+    b) Copy the /sbin/dhclient-script to /etc/dhclient-script and
+       replace the add_new_resolv_conf() function with something like
+       this:
 
-       to /etc/dhclient-exit-hooks.
+         add_new_resolv_conf() {
+                 local tmpres=/var/run/resolv.conf.${interface}
+                 rm -f $tmpres
 
-    c) Make sure resolvconf's directory (at least
-       /usr/local/etc/resolvconf/ and
-       /usr/local/etc/resolvconf/run/interfaces/, maybe more) are
-       writable by the radns user.
+                 > $tmpres
+                 [ "$new_domain_search" ] && echo search $new_domain_search >>
+                 $tmpres
+                 [ "$new_domain_name" ] && echo domain $new_domain_name >>
+                 $tmpres
 
-    d) If you only want to change the /etc/resolv.conf file, remove
-       all scripts except libc from
-       /usr/local/etc/resolvconf/update.d/, typically by moving them
-       somewhere else.
+                 if [ -n "$new_domain_name_servers" ]
+                 then
+                     for nameserver in $new_domain_name_servers
+                     do  
+                         echo "nameserver $nameserver" >> $tmpres
+                     done
+                 fi
+
+                 # Add what we got from DHCP to the store:
+                 /usr/local/sbin/resolvconf -a $interface < $tmpres
+
+                 # Run the update scripts.
+                 /usr/local/sbin/resolvconf -u
+
+                 return 1
+         }
+
+    c) Tell dhclient to use your new script by editing
+       /etc/dhclient.conf and adding something like this:
+
+         interface "em0" {
+           script "/etc/dhclient-script";
+         }
+
+    d) Make /etc/resolv.conf a symbolic link to resolvconf's file.
+
+       # ln -s /usr/local/etc/resolvconf/run/resolv.conf /etc/resolv.conf
+
+    e) Make /var/run/resolvconf writable by both the _dhcp and the
+       radns user, perhaps by making it group writable and using a
+       common group.
+
+       Currently this doesn't seem to work because something changes
+       the modes on the created files, perhaps the resolvconf program.
 
     e) Edit /etc/rc.conf and add
 
