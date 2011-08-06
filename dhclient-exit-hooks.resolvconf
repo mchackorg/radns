@@ -1,52 +1,22 @@
 #! /bin/sh
 
-# Place this file in /etc. Will be called by dhclient when it receives
-# new information.
+# Name this file /etc/dhclient-exit-hooks. Will be called by dhclient
+# when it receives new information.
 
-if [ "$resolv_conf" = "" ]
+# Temporary file
+resolvconf="/tmp/dhclient-resolv.conf"
+
+echo "# From dhclient on interface $interface" > $resolvconf
+[ "$new_domain_search" ] && echo search $new_domain_search >> $resolvconf
+[ "$new_domain_name" ] && echo domain $new_domain_name >> $resolvconf
+
+if [ -n "$new_domain_name_servers" ]
 then
-    if [ $verbose -gt 0 ]
-    then
-        echo "$0: Environment variable $resolv_conf not set. Exiting..."
-    fi
-    exit 1
+    for nameserver in $new_domain_name_servers
+    do  
+        echo "nameserver $nameserver" >> $resolvconf
+    done
 fi
 
-# Do nothing if $resolv_conf is not an ordinary file
-if [ ! -f $resolv_conf ]
-then
-    if [ $verbose -gt 0 ]
-    then
-        echo "$0: $resolv_conf is not an ordinary file or does not exist. Exiting..."
-    fi
-    exit 1
-fi
-
-# resolvconf's interface directory
-# (/usr/local/etc/resolvconf/run/interfaces/ on FreeBSD) needs to be
-# writable by our user, by default 'radns'.
-
-resolvconf -a $if < $resolv_conf
-
-# The directory and file radns writes to.
-radns_dir="/usr/local/etc/radns"
-radns_resolv="${radns_dir}/radns-resolv.conf"
-
-# The real resolv.conf.
-resolvconf="/etc/resolv.conf"
-
-if [ -f $radns_resolv ]
-then
-    > $resolvconf
-    [ "$new_domain_search" ] && echo search $new_domain_search >> $resolvconf
-    [ "$new_domain_name" ] && echo domain $new_domain_name >> $resolvconf
-    cat $radns_resolv >> $resolvconf
-
-    if [ -n "$new_domain_name_servers" ]
-    then
-        for nameserver in $new_domain_name_servers
-        do
-            echo "nameserver $nameserver" >> $resolvconf
-        done
-    fi
-fi
+# Add what we got from DHCP to the store:
+/usr/local/sbin/resolvconf -a $interface < $resolvconf
