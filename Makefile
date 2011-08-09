@@ -1,7 +1,7 @@
-VERSION=20110805-7
+VERSION=20110809
 DIST=radns-$(VERSION)
 DISTFILES=LICENSE Makefile NEWS README README.FreeBSD TODO.txt radns.c list.c list.h \
-	radns.man dhclient-exit-hooks dhclient-exit-hooks.resolvconf radns-script radns.sh
+	radns.man dhclient-exit-hooks radns-script radns.sh
 CFLAGS+=-Wall -Wextra -std=c99 -pedantic -g -DVERSION=\"$(VERSION)\" \
 	-D _GNU_SOURCE
 LDFLAGS+=
@@ -24,7 +24,6 @@ install: $(TARGETS)
 	install -m 644 radns.man $(PREFIX)/man/man8/radns.8
 	install -o radns -g radns -d $(ETCDIR)
 	install -m 755 dhclient-exit-hooks $(ETCDIR)
-	install -m 755 dhclient-exit-hooks.resolvconf $(ETCDIR)
 	install -m 755 radns-script $(ETCDIR)
 
 deinstall:
