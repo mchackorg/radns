@@ -1812,7 +1812,7 @@ int main(void)
 /************************************************************************/
 int main(int argc, char **argv)
 {
-    char ch;                    /* Option character */
+    int ch;                    /* Option character */
     int sock;               /* Raw socket file descriptor */
     struct icmp6_filter filter; /* Filter for raw socket. */
     int on;                     /* Just a flag for setsockopts... */
