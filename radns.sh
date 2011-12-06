@@ -24,6 +24,7 @@ load_rc_config $name
 
 # Default values
 : ${radns_enable="NO"}
+: ${radns_flags=""}
 : ${radns_pidfile="/var/run/${name}.pid"}
 : ${radns_resolv="${radns_dir}/radns-resolv.conf"}
 : ${radns_script=""}
@@ -54,6 +55,8 @@ then
 else
     command_args="-f ${radns_resolv} -u ${radns_username} -p ${radns_pidfile}"
 fi
+
+command_args+=$radns_flags
 
 reload_precmd()
 {
