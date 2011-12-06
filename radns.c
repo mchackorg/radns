@@ -166,7 +166,7 @@ struct suffix
 };
 
 /* Recursive DNS Server (RDNSS) option in Router Advertisments. */
-struct nd_opt_rdnss
+struct radns_opt_rdnss
 {
     uint8_t nd_opt_type; /* Should be 25 (0x19) for RDNSS */
     uint8_t nd_opt_len; /* Length: 3 (* 8 octets) if one IPv6
@@ -179,7 +179,7 @@ struct nd_opt_rdnss
 } __attribute__((__packed__));
 
 /* DNS Search List option in Router Advertisments. */
-struct nd_opt_dnssl
+struct radns_opt_dnssl
 { 
     uint8_t nd_opt_type;
     uint8_t nd_opt_len;
@@ -189,10 +189,10 @@ struct nd_opt_dnssl
 
 static struct resolver *expirenext(struct item *reslist);
 static struct resolver *findresolv(struct in6_addr addr, struct item *reslist);
-static bool rdnss(const struct nd_opt_rdnss *rdnssp, int optlen, 
+static bool rdnss(const struct radns_opt_rdnss *rdnssp, int optlen, 
            int lenleft, struct item **reslist, int *storedres,
            char ifname[IFNAMSIZ]);
-static bool dnssl(const struct nd_opt_dnssl *dnsslp, int optlen, 
+static bool dnssl(const struct radns_opt_dnssl *dnsslp, int optlen, 
            int lenleft, struct item **suflist, int *storedsuf,
            char ifname[IFNAMSIZ]);
 static int dnsname(char *domain, uint8_t *name, int buflen);
@@ -274,7 +274,7 @@ static struct resolver *findresolv(struct in6_addr addr, struct item *reslist)
     return NULL;
 }
 
-static bool rdnss(const struct nd_opt_rdnss *rdnssp, int optlen, 
+static bool rdnss(const struct radns_opt_rdnss *rdnssp, int optlen, 
                   int lenleft, struct item **reslist, int *storedres,
                   char ifname[IFNAMSIZ])
 {
@@ -315,8 +315,8 @@ static bool rdnss(const struct nd_opt_rdnss *rdnssp, int optlen,
     }
 
     /* Move to first IPv6 address. */
-    datap += sizeof (struct nd_opt_rdnss);
-    lenleft -= sizeof (struct nd_opt_rdnss);
+    datap += sizeof (struct radns_opt_rdnss);
+    lenleft -= sizeof (struct radns_opt_rdnss);
             
     if (lenleft <= 0)
     {
@@ -415,7 +415,7 @@ static int dnsname(char *domain, uint8_t *name, int buflen)
     return strlen;
 }
 
-static bool dnssl(const struct nd_opt_dnssl *dnsslp, int optlen, 
+static bool dnssl(const struct radns_opt_dnssl *dnsslp, int optlen, 
                   int lenleft, struct item **suflist, int *storedsuf,
                   char ifname[IFNAMSIZ])
 {
@@ -469,9 +469,9 @@ static bool dnssl(const struct nd_opt_dnssl *dnsslp, int optlen,
     */
 
     /* Move to first domain suffix. */
-    datap += sizeof (struct nd_opt_dnssl);
-    lenleft -= sizeof (struct nd_opt_dnssl);
-    optlenleft -= sizeof (struct nd_opt_dnssl);
+    datap += sizeof (struct radns_opt_dnssl);
+    lenleft -= sizeof (struct radns_opt_dnssl);
+    optlenleft -= sizeof (struct radns_opt_dnssl);
 
     if (lenleft <= 0)
     {
@@ -748,7 +748,7 @@ static bool handle_icmp6(int sock, struct item **suflist, int *storedsuf,
             bool rb;
             
         case ND_OPT_RDNSS:
-            rb = rdnss((const struct nd_opt_rdnss *)datap,
+            rb = rdnss((const struct radns_opt_rdnss *)datap,
                        optlen, lenleft, reslist, storedres,
                        ifname);
 
@@ -757,7 +757,7 @@ static bool handle_icmp6(int sock, struct item **suflist, int *storedsuf,
             break;
 
         case ND_OPT_DNSSL:
-            rb = dnssl((const struct nd_opt_dnssl *)datap,
+            rb = dnssl((const struct radns_opt_dnssl *)datap,
                        optlen, lenleft, suflist, storedsuf, ifname);
 
             rewrite = rewrite || rb;
