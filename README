@@ -8,7 +8,20 @@ search list and address(es) in a file in the same syntax as
 resolv.conf(5). The default filename is ./resolv.conf, but it is
 configurable with -f <filename>.
 
-== Configuration & Integration ==
+== Building, Configuration & Integration ==
+
+To build you will need to know if Posix realtime function
+clock_gettime() needs a special library. On Linux systems, for
+instance, this is in librt (link with -lrt). Obviously, you will need
+the socket API. On some systems this is in libsocket (link with
+-lsocket).
+
+If your system use the resolvconf programs to configure resolv.conf
+and you intend to use the -c flag in radns to use a priveleged helper
+program to call resolvconf, you need to know the path to the
+resolvconf binary. Add it to the define in the Makefile:
+
+  -DRESOLVCONF=\"/usr/local/sbin/resolvconf\"
 
 Configuration and integration is a bit system dependent. Look at the
 file named after your system in this directory. For FreeBSD, read

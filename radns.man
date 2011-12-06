@@ -1,4 +1,4 @@
-.TH radns 8 "May 26, 2011" "" ""
+.TH radns 8 "Oct 31, 2011" "" ""
 .SH NAME
 radns \- Resolving DNS Server Client for IPv6.
 .SH SYNOPSIS
@@ -6,6 +6,7 @@ radns \- Resolving DNS Server Client for IPv6.
 [ \fB\-v\fP 
 [ \fB\-v\fP ] 
 [ \fB\-v\fP ] ] 
+[ \fB\-c\fP ]
 [ \fB\-f\fP \fIpath to resolv file\fP ]
 [ \fB\-l\fP \fImaximum number of domain suffixes in search list\fP ]
 [ \fB\-m\fP \fImaximum number of resolver addresses\fP ]
@@ -27,6 +28,10 @@ prints version information and quits the program.
 \-v
 turns on verbose mode and gives more debug output. Also stops the process from
 becoming a daemon. Repeated \-v increases verbosity.
+.TP
+\-c
+Turns on the use of a priveleged child process (raresolv) running as
+root that will call the resolvconf program.
 .TP
 \-f \fIpath to resolv file\fP
 specifies the filename to write the IPv6 addresses to. Default is

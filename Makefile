@@ -1,12 +1,13 @@
-VERSION=20110809
+VERSION=20111206
 DIST=radns-$(VERSION)
-DISTFILES=LICENSE Makefile NEWS README README.FreeBSD TODO.txt radns.c list.c list.h \
-	radns.man dhclient-exit-hooks radns-script radns.sh
+DISTFILES=LICENSE Makefile NEWS README README.FreeBSD TODO.txt radns.c list.c \
+	list.h radns.man dhclient-exit-hooks radns-script radns.sh
 CFLAGS+=-Wall -Wextra -std=c99 -pedantic -g -DVERSION=\"$(VERSION)\" \
-	-D _GNU_SOURCE
+	-D _GNU_SOURCE -DRESOLVCONF=\"/usr/local/sbin/resolvconf\" \
+	-DPRIVPATH=\"/usr/local/bin/raresolv\"
 LDFLAGS+=
-LDLIBS+=
-TARGETS=radns
+LDLIBS+= #-lrt needed for Linux.
+TARGETS=radns raresolv
 OBJS=radns.o list.o
 RM=/bin/rm
 PREFIX?=/usr/local
@@ -19,8 +20,12 @@ radns: $(OBJS)
 
 list.o: list.c list.h Makefile
 
+raresolv: raresolv.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ raresolv.c
+
 install: $(TARGETS)
 	install -m 755 radns $(PREFIX)/bin
+	install -m 755 raresolv $(PREFIX)/bin
 	install -m 644 radns.man $(PREFIX)/man/man8/radns.8
 	install -o radns -g radns -d $(ETCDIR)
 	install -m 755 dhclient-exit-hooks $(ETCDIR)

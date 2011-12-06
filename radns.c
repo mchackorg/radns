@@ -57,6 +57,7 @@
 #include <getopt.h>
 #include <pwd.h>
 #include <time.h>
+#include <libgen.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <sys/uio.h>
@@ -73,6 +74,8 @@
 #include "list.h"
 
 /* #define TEST 1 */
+
+#define BUFLEN 1024
 
 #define RESOLVEFILE "./resolv.conf"
 
@@ -121,10 +124,13 @@ char *progname; /* argv[0] */
 char *filename = RESOLVEFILE;
 char *pidfilename = PIDFILE;
 char *scriptname = NULL;
+bool doprivsep = false;       /* Do we fork off a priveleged helper program?  */
 bool progdone;                /* true when we exit the program. */
 int verbose = 0;                /* how much debug output? */
 int localerrno;                 /* our own copy of errno. */
 bool childcare = false;       /* true when we need to reap zombies. */
+int pipefd[2];
+pid_t privpid = -1;             /* process id of priveleged child. */
 
 /*
  * Default for maximum number of stored resolver addresses. Can be
@@ -209,6 +215,7 @@ static bool handle_icmp6(int sock, struct item **suflist, int *storedsuf,
                          struct item **reslist, int *storedres,
                          char ifname[IFNAMSIZ]);
 static int mkpidfile(uid_t owner, gid_t group);
+static pid_t privsep(void);
 
 #ifdef TEST
 static void deladdr(struct item **reslist, int *storedres,
@@ -1034,10 +1041,13 @@ static void hexdump(uint8_t *buf, uint16_t len)
 /* Prints a helpful message. */
 static void printhelp(void)
 {
-    fprintf(stderr, "Usage: %s [-v [-v] [-v]] [-f filename] [-l max suffixes ]"
+    fprintf(stderr, "Usage: %s [-v [-v] [-v]] [-c ] [-f filename] "
+            "[-l max suffixes ]"
             "\n[-m max resolvers] [-u user] [-s script] [-p pidfile ]\n",
             progname);
 
+    fprintf(stderr, "\n\n-c means we want a child program running as root to "
+            "call the resolvconf program.\n");
     fprintf(stderr, "\n\n-f filename gives the filename the DNS resolving "
             "address is written to.\n Default is ./resolv.conf.\n");
     fprintf(stderr, "\n\n-l number-of-domain-suffixes sets an upper limit of "
@@ -1296,8 +1306,8 @@ static bool addsuffix(struct item **suflist, int *storedsuf, uint32_t ttl,
         {
             if (verbose > 2)
             {
-                printf("New expire is now (%d) + ttl (%d) = %d\n", now.tv_sec,
-                       ttl, now.tv_sec + ttl);
+                printf("New expire is now (%d) + ttl (%d) = %d\n", (int) now.tv_sec,
+                       ttl, (int) now.tv_sec + ttl);
             }
             suf->expire = now.tv_sec + ttl;
         }
@@ -1467,8 +1477,8 @@ static bool addresolver(struct item **reslist, int *storedres, uint32_t ttl,
         {
             if (verbose > 2)
             {
-                printf("New expire is now (%d) + ttl (%d) = %d\n", now.tv_sec,
-                       ttl, now.tv_sec + ttl);
+                printf("New expire is now (%d) + ttl (%d) = %d\n", (int) now.tv_sec,
+                       ttl, (int) now.tv_sec + ttl);
             }
             res->expire = now.tv_sec + ttl;
         }
@@ -1584,6 +1594,57 @@ end:
     }
 
     return rc;
+}
+
+pid_t privsep(void)
+{
+    pid_t pid;
+
+    if (pipe(pipefd) < 0)
+    {
+        perror("pipe");
+        return -1;
+    }
+    
+    pid = fork();
+    if (-1 == pid)
+    {
+        perror("fork");
+        return -1;
+    }
+    else if (0 == pid)
+    {
+        /* In the child */
+
+        /* Close unused write end of pipe. */
+        close(pipefd[1]);
+
+        /* Connect stdin to the pipe's read end. */
+        if (-1 == dup2(pipefd[0], 0))
+        {
+            perror("dup2");
+            exit(1);
+        }
+
+        /* Start child program. */
+        if (-1 == execl(PRIVPATH, basename(PRIVPATH), filename, NULL))
+        {
+            perror("execl");
+            exit(1);
+        }        
+    }
+    else
+    {
+        /* Parent. */
+
+        /* Close unused read end of pipe. */  
+        close(pipefd[0]);
+
+        return pid;
+    }
+
+    /* Notreached. */
+    return -1;
 }
 
 #ifdef TEST
@@ -1841,12 +1902,14 @@ int main(int argc, char **argv)
     sigaction(SIGQUIT, &sigact, NULL);
     sigaction(SIGTERM, &sigact, NULL);
 
+    /* Ignore these signals. */
     sigact.sa_handler = SIG_IGN;    
     sigaction(SIGHUP, &sigact, NULL);    
+    sigaction(SIGPIPE, &sigact, NULL);    
 
     while (1)
     {
-        ch = getopt(argc, argv, "f:l:m:s:p:u:vV");
+        ch = getopt(argc, argv, "cf:l:m:s:p:u:vV");
         if (-1 == ch)
         {
             /* No more options, break out of while loop. */
@@ -1855,6 +1918,8 @@ int main(int argc, char **argv)
 
         switch (ch)
         {
+        case 'c':
+            doprivsep = true;
         case 'f':
             filename = optarg;
             break;
@@ -1893,6 +1958,17 @@ int main(int argc, char **argv)
         exit(1);
     }
 
+    /* Start privilege seperation helper program. */
+    if (doprivsep)
+    {
+        privpid = privsep();
+        if (-1 == privpid)
+        {
+            logmsg(LOG_ERR, "Couldn't start privileged child. Terminating.\n");
+            exit(1);
+        }
+    }
+    
     /*
      * Daemonize if we're not told to do otherwise. Don't change
      * directory to /, though.
@@ -1922,7 +1998,7 @@ int main(int argc, char **argv)
     {
         logmsg(LOG_ERR, "Couldn't create pid file.\n");
     }
-
+    
     /* Dropping privileges. */
     /* FIXME: setgroups() as well? */
     if (0 != setgid(pw->pw_gid) || 0 != setuid(pw->pw_uid))
@@ -2059,25 +2135,78 @@ int main(int argc, char **argv)
             /* Call external script, if any. */
             (void)exithook(filename, ifname);
 
+            if (doprivsep)
+            {
+                /* Tell our privsep child about new stuff. */
+                if (0 != storedres)
+                {
+                    /* Adding. */
+                    write(pipefd[1], "+", 1);                
+                }
+                else
+                {
+                    /* Deleting. */
+                    write(pipefd[1], "-", 1);
+                }
+            }
+
             newresolv = false;
         }
         
-        /* Reap any zombie exit hook script(s) we might have. */
+        /*
+         * Reap any zombie exit hook script(s) we might have and check
+         * health of priveleged child.
+         */
         if (childcare)
         {
-            while (-1 != waitpid(-1, &status, WNOHANG))
-                ;
+            pid_t pid;
+
+            do
+            {
+                pid = waitpid(-1, &status, WNOHANG);
+
+                if (pid == privpid)
+                {
+                    logmsg(LOG_ERR, "Priveleged child died. Terminating.\n");
+                    exit(1);
+                }
+                
+            } while (-1 != pid);
+            
             childcare = false;
         }
+    } /* for - main loop. */
 
-    } /* for */
-
+    /* Out of main loop. Clean exit... */
+    
     logmsg(LOG_INFO, "Terminating.\n");
 
     /* Free all resolvers and suffixes. Write an empty resolv file. */
     delallitems(&reslist, &storedres);
     delallitems(&suflist, &storedsuf);
+    
     writeresolv(suflist, storedsuf, reslist);
+
+    if (doprivsep)
+    {
+        if (verbose > 0)
+        {
+            printf("Telling any privsep helpers to delete interface in "
+                   "resolvconf.\n");
+        }
+
+        /*
+         * Closing the pipe to our helper program makes it delete
+         * everything.
+         */
+        close(pipefd[1]);        
+        
+    }
+
+    /* Call external script, if any. */
+    (void)exithook(filename, ifname);
+
+    
     
     exit(0);
 }

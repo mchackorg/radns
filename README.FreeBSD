@@ -30,9 +30,10 @@ That's it.
 
 If you're on a dual stack machine things are more complicated. You can
 merge the information from the system's DHCP client (dhclient) and
-from radns in at least two ways, one simple and one more complex:
+from radns in at least two ways, one using dhclient's script and one
+using the resolvconf program
 
- - The Simple Way
+ - Using dhclient
 
      Copy the example script in
  
@@ -43,14 +44,11 @@ from radns in at least two ways, one simple and one more complex:
     dhclient will now merge the data from radns into /etc/resolv.conf
     whenever it receives new DHCP information.
 
- - The Hard Way
+ - Using resolvconf
 
     Make both the DHCP client and radns use the resolvconf program.
     This is already the case on some other systems, notably Debian
     GNU/Linux.
-
-    Warning: This is not quite working on FreeBSD yet, but this text
-    is provided as a start.
 
     a) Install the dns/openresolv port which contains the resolvconf
        program.
@@ -106,8 +104,10 @@ from radns in at least two ways, one simple and one more complex:
 
     e) Edit /etc/rc.conf and add
 
-        radns_enable="YES"
-        radns_script="/usr/local/etc/radns/radns-script"
+         radns_flags="-c"
+
+       This means radns will start the helper program raresolv running
+       as root. This program will use resolvconf.
 
 == Router Software ==
 
