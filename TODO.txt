@@ -5,21 +5,12 @@
   This way we might, for instance, update our AAAA record if we get a
   new IPv6 address.
 
-- Create a FreeBSD port.
-
-- Create a Debian package.
-
 - How to deal with several RDNSS and DNSSL options in same RA? Is it
   allowed?
 
 - Use logmsg() everywhere. Eliminate printf().
 
 - use umask(0)
-
-- Patch RDNSS option into FreeBSD's rtadvd. Maybe done in OpenBSD.
-  Port?
-
-  http://marc.info/?l=openbsd-tech&m=129595751431633&w=2
 
 - Optionally send a router solicitation when starting.
 
