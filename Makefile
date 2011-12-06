@@ -1,7 +1,7 @@
 VERSION=20111206
 DIST=radns-$(VERSION)
 DISTFILES=LICENSE Makefile NEWS README README.FreeBSD TODO.txt radns.c list.c \
-	list.h radns.man dhclient-exit-hooks radns-script radns.sh
+	list.h raresolv.c radns.man dhclient-exit-hooks radns-script radns.sh
 CFLAGS+=-Wall -Wextra -std=c99 -pedantic -g -DVERSION=\"$(VERSION)\" \
 	-D _GNU_SOURCE -DRESOLVCONF=\"/usr/local/sbin/resolvconf\" \
 	-DPRIVPATH=\"/usr/local/bin/raresolv\"
